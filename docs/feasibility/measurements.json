@@ -1,0 +1,263 @@
+{
+  "date": "2026-10-08",
+  "classification": "DIAGNOSTIC CLI screen, per-process model loading, warm filesystem cache; instrumented; not production-qualified",
+  "host": {
+    "chip": "Apple M4 Pro",
+    "memory_gib": 48,
+    "os": "macOS 26.6.2",
+    "arch": "arm64"
+  },
+  "method": "One run per case; process wall time includes model loading; wait4 peak RSS; shared workstation with some concurrent builds; not a controlled configuration ranking.",
+  "engine_revision": "ef339be58a778b062e1c14382347964552eae007",
+  "engine_sha256": "0e48c8650273f99ff66ca26765978e9c386523d86490686c2ae6118b798816d6",
+  "results": [
+    {
+      "case": "int8-en",
+      "wall_seconds": 5.967,
+      "audio_seconds": 13.28,
+      "total_rtf": 0.449,
+      "peak_rss_bytes": 5905743872,
+      "command": [
+        "$ENGINE/qwen_tts",
+        "-d",
+        "$MODELS/cv",
+        "--text",
+        "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas.",
+        "-s",
+        "ryan",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "$EVIDENCE/screen/int8-en.wav",
+        "--int8"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "$EVIDENCE/screen/int8-en-census.json",
+        "QWEN_DISPATCH_JSON": "$EVIDENCE/screen/int8-en-dispatch.json"
+      },
+      "experiment": "screen",
+      "wav_sha256": "a194c835b314b632f6dd5a3e6d846d6a02d55c467ab7c8b4e8db61f9868c3839",
+      "census": "census/screen-int8-en.json"
+    },
+    {
+      "case": "bf16-en",
+      "wall_seconds": 6.809,
+      "audio_seconds": 10.72,
+      "total_rtf": 0.635,
+      "peak_rss_bytes": 5003575296,
+      "command": [
+        "$ENGINE/qwen_tts",
+        "-d",
+        "$MODELS/cv",
+        "--text",
+        "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas.",
+        "-s",
+        "ryan",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "$EVIDENCE/screen/bf16-en.wav"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "$EVIDENCE/screen/bf16-en-census.json",
+        "QWEN_DISPATCH_JSON": "$EVIDENCE/screen/bf16-en-dispatch.json"
+      },
+      "experiment": "screen",
+      "wav_sha256": "50fcbfd490381b98a8b166b10d48c4d32a42b74bf40bcdf33cbdfdc09113272c",
+      "census": "census/screen-bf16-en.json"
+    },
+    {
+      "case": "int4-en",
+      "wall_seconds": 6.082,
+      "audio_seconds": 12.64,
+      "total_rtf": 0.481,
+      "peak_rss_bytes": 5095178240,
+      "command": [
+        "$ENGINE/qwen_tts",
+        "-d",
+        "$MODELS/cv",
+        "--text",
+        "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas.",
+        "-s",
+        "ryan",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "$EVIDENCE/screen/int4-en.wav",
+        "--int4"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "$EVIDENCE/screen/int4-en-census.json",
+        "QWEN_DISPATCH_JSON": "$EVIDENCE/screen/int4-en-dispatch.json"
+      },
+      "experiment": "screen",
+      "wav_sha256": "03b0d33f6305b1f59a19af901a621e705447dae4734adb78c4601137882029f4",
+      "census": "census/screen-int4-en.json"
+    },
+    {
+      "case": "int8-de",
+      "wall_seconds": 5.772,
+      "audio_seconds": 12.8,
+      "total_rtf": 0.451,
+      "peak_rss_bytes": 5896683520,
+      "command": [
+        "$ENGINE/qwen_tts",
+        "-d",
+        "$MODELS/cv",
+        "--text",
+        "Gute Arbeit braucht Ruhe. In dieser Pr\u00e4sentation zeigen wir drei einfache Wege, Unterbrechungen zu reduzieren, die eigene Aufmerksamkeit zu sch\u00fctzen und Raum f\u00fcr bessere Ideen zu schaffen.",
+        "-s",
+        "ryan",
+        "-l",
+        "German",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "$EVIDENCE/screen/int8-de.wav",
+        "--int8"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "$EVIDENCE/screen/int8-de-census.json",
+        "QWEN_DISPATCH_JSON": "$EVIDENCE/screen/int8-de-dispatch.json"
+      },
+      "experiment": "screen",
+      "wav_sha256": "5a6c8aa8b63ce7f29cbebb7a525c2353f365981c40f04de2d78ce15d028aa441",
+      "census": "census/screen-int8-de.json"
+    },
+    {
+      "case": "int8-en",
+      "wall_seconds": 4.285,
+      "audio_seconds": 12.08,
+      "total_rtf": 0.355,
+      "peak_rss_bytes": 3773497344,
+      "command": [
+        "$ENGINE/qwen_tts",
+        "-d",
+        "$MODELS/cv",
+        "--text",
+        "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas.",
+        "-s",
+        "ryan",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "$EVIDENCE/lowmem-screen/int8-en.wav",
+        "--int8"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "$EVIDENCE/lowmem-screen/int8-en-census.json",
+        "QWEN_DISPATCH_JSON": "$EVIDENCE/lowmem-screen/int8-en-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      },
+      "experiment": "lowmem-screen",
+      "wav_sha256": "d2a43a3eed1b3b8b4ac8c21fd805dc92042fa5dcf349f4cfc70ef023eb8fc1ad",
+      "census": "census/lowmem-screen-int8-en.json"
+    },
+    {
+      "case": "long-en",
+      "wall_seconds": 26.173,
+      "audio_seconds": 41.12,
+      "total_rtf": 0.637,
+      "peak_rss_bytes": 3583770624,
+      "command": [
+        "$ENGINE/qwen_tts",
+        "-d",
+        "$MODELS/cv",
+        "--text",
+        "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas. Begin by choosing a single priority for the morning. Turn off notifications and close the applications you do not need. Tell your colleagues when you will be available again. After a focused session, take a short break away from the screen. These changes do not require a perfect schedule. Try one small experiment this week, observe what helps, and adjust your routine. The goal is to create enough quiet time to think clearly and finish work that matters.",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "90",
+        "-o",
+        "$EVIDENCE/lowmem-extended/long-en.wav",
+        "-s",
+        "ryan",
+        "--int8"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "$EVIDENCE/lowmem-extended/long-en-census.json",
+        "QWEN_DISPATCH_JSON": "$EVIDENCE/lowmem-extended/long-en-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      },
+      "experiment": "lowmem-extended",
+      "wav_sha256": "a3d02cfac6969a8a2a99e5d293725adb976a919eac51b517080928360d0aed3f",
+      "census": "census/lowmem-extended-long-en.json"
+    },
+    {
+      "case": "clone-en",
+      "wall_seconds": 11.413,
+      "audio_seconds": 11.36,
+      "total_rtf": 1.005,
+      "peak_rss_bytes": 3855613952,
+      "command": [
+        "$ENGINE/qwen_tts",
+        "-d",
+        "$MODELS/base",
+        "--text",
+        "Tomorrow morning, protect one quiet hour for the task that matters most. A saved presenter lets you narrate another presentation without recording your voice again.",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "$EVIDENCE/lowmem-extended/clone-en.wav",
+        "--load-voice",
+        "$EVIDENCE/presenter.qvoice",
+        "--int8"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "$EVIDENCE/lowmem-extended/clone-en-census.json",
+        "QWEN_DISPATCH_JSON": "$EVIDENCE/lowmem-extended/clone-en-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      },
+      "experiment": "lowmem-extended",
+      "wav_sha256": "d383d681df781e84b8219f08bf6b6a1f52a8e95efa57bd1ba173cfbe6e8e5164",
+      "census": "census/lowmem-extended-clone-en.json"
+    }
+  ],
+  "retained_samples": {
+    "clone-en.wav": "d383d681df781e84b8219f08bf6b6a1f52a8e95efa57bd1ba173cfbe6e8e5164",
+    "long-en.wav": "a3d02cfac6969a8a2a99e5d293725adb976a919eac51b517080928360d0aed3f",
+    "lowmem-en.wav": "d2a43a3eed1b3b8b4ac8c21fd805dc92042fa5dcf349f4cfc70ef023eb8fc1ad",
+    "narrated-slide.mp4": "a61e80d1cc855a590feb87be479e0ae72c69e13db6b2573c991ebe32ad96884a",
+    "preset-de.wav": "5a6c8aa8b63ce7f29cbebb7a525c2353f365981c40f04de2d78ce15d028aa441",
+    "preset-en.wav": "a194c835b314b632f6dd5a3e6d846d6a02d55c467ab7c8b4e8db61f9868c3839"
+  }
+}

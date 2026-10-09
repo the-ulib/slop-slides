@@ -1,0 +1,39 @@
+{
+  "classification": "Official reference quality sample; not a throughput benchmark or numerical-parity test",
+  "packages": {
+    "qwen-tts": "0.1.1",
+    "torch": "2.14.1",
+    "transformers": "4.57.3",
+    "numpy": "2.2.6",
+    "soundfile": "0.14.0"
+  },
+  "device": "cpu",
+  "dtype": "float32",
+  "attention": "eager",
+  "threads": 4,
+  "speaker": null,
+  "language": "German",
+  "text": "Gute Arbeit braucht Ruhe. In dieser Präsentation zeigen wir drei einfache Wege, Unterbrechungen zu reduzieren, die eigene Aufmerksamkeit zu schützen und Raum für bessere Ideen zu schaffen.",
+  "seed": 42,
+  "settings": {
+    "do_sample": true,
+    "top_k": 50,
+    "top_p": 1.0,
+    "temperature": 0.9,
+    "repetition_penalty": 1.05,
+    "subtalker_dosample": true,
+    "subtalker_top_k": 50,
+    "subtalker_top_p": 1.0,
+    "subtalker_temperature": 0.9,
+    "max_new_tokens": 600
+  },
+  "load_seconds": 0.907,
+  "generation_seconds": 28.174,
+  "sample_rate": 24000,
+  "sample_count": 326400,
+  "audio_seconds": 13.6,
+  "wav_sha256": "b15c337ff83f142135ed6ce4194b1c82b43388592e2dcfa1ee7023a846f7252f",
+  "mode": "ICL clone",
+  "reference_sha256": "b17435ff71e46147da22600bfe75b75b3cbb4d33a89a3e16dca2e91a573dd122",
+  "reference_text": "Printing, in the only sense with which we are at present concerned, differs from most if not from all the arts and crafts represented in the Exhibition"
+}

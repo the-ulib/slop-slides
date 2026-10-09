@@ -1,0 +1,60 @@
+{
+  "method": "Local faster-whisper base multilingual, CPU int8, beam size 5; language selected explicitly; numerical warnings occurred; rough content screen only, not quality or likeness validation.",
+  "model_revision": "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
+  "results": [
+    {
+      "file": "int8-en.wav",
+      "language": "en",
+      "text": "Good work needs space. This presentation shows three simple ways to reduce interruptions. Protect your attention and make room for better ideas.",
+      "experiment": "screen"
+    },
+    {
+      "file": "bf16-en.wav",
+      "language": "en",
+      "text": "Good work needs space. This presentation shows three simple ways to reduce interruptions. Protect your attention and make room for better ideas.",
+      "experiment": "screen"
+    },
+    {
+      "file": "int4-en.wav",
+      "language": "en",
+      "text": "Good work meets space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas.",
+      "experiment": "screen"
+    },
+    {
+      "file": "int8-de.wav",
+      "language": "de",
+      "text": "Gute Arbeit braucht Ruhe. In dieser Präsentation zeigen wir drei einfache Wege, Unterbrechungen zu reduzieren, die eigene Aufmerksamkeit zu schützen und Raum für bessere Ideen zu schaffen.",
+      "experiment": "screen"
+    },
+    {
+      "file": "clone-reload-en.wav",
+      "language": "en",
+      "text": "Tomorrow morning, protect one quiet hour for the task that matters most. A saved presenter lets you narrate another presentation without recording your voice again.",
+      "experiment": "screen"
+    },
+    {
+      "file": "rust-metal-en.wav",
+      "language": "en",
+      "text": "Could work need space!",
+      "experiment": "screen"
+    },
+    {
+      "file": "int8-en.wav",
+      "language": "en",
+      "text": "Good work need space. This presentation shows three simple ways to reduce interruptions, protect your attention and make room for better ideas.",
+      "experiment": "lowmem"
+    },
+    {
+      "file": "long-en.wav",
+      "language": "en",
+      "text": "Good work needs space. This presentation shows three simple ways to reduce interruptions. Protect your attention and make room for better ideas. Begin by choosing a single priority for the morning. Do AM, turn off notifications and close the applications you do not need. Tell your colleagues when you will be available again. After a focus session, take a short break away from the screen. These changes do not require a perfect schedule. Try one small experiment this week. Observe what helps and adjust your routine. The goal is to create enough quiet time to think clearly and finish work that matters.",
+      "experiment": "lowmem"
+    },
+    {
+      "file": "clone-en.wav",
+      "language": "en",
+      "text": "Tomorrow morning, protect one quiet hour for the task that matters most. A saved presenter lets you narrate another presentation without recording your voice again.",
+      "experiment": "lowmem"
+    }
+  ]
+}

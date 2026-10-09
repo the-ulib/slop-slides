@@ -1,0 +1,5 @@
+--- a/Makefile
++++ b/Makefile
+@@ -111 +111 @@
+-KAI_HAS_BF16 := $(shell $(CC) $(ARCH_FLAGS) -dM -E -x c /dev/null 2>/dev/null | grep -qE '^#define __ARM_FEATURE_BF16 ' && echo 1 || echo 0)
++KAI_HAS_BF16 := $(shell $(CC) $(ARCH_FLAGS) -dM -E -x c /dev/null 2>/dev/null | grep -qE '^\#define __ARM_FEATURE_BF16 ' && echo 1 || echo 0)

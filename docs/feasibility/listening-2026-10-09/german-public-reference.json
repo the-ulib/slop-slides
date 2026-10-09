@@ -1,0 +1,35 @@
+{
+  "speaker": "Thorsten Müller",
+  "rights": "CC0 1.0 Universal; actual pinned LICENSE read; speaker publishes original recordings for open TTS use",
+  "rights_source": "https://github.com/thorstenMueller/Thorsten-Voice",
+  "license_url": "https://raw.githubusercontent.com/thorstenMueller/Thorsten-Voice/29d0c153c55d8ffaa0ebf8ed1ecc879bff9fdf27/LICENSE",
+  "license_sha256": "36ffd9dc085d529a7e60e1276d73ae5a030b020313e6c5408593a6ae2af39673",
+  "revision": "29d0c153c55d8ffaa0ebf8ed1ecc879bff9fdf27",
+  "transcript_source": "https://raw.githubusercontent.com/thorstenMueller/Thorsten-Voice/29d0c153c55d8ffaa0ebf8ed1ecc879bff9fdf27/docs/audio_compare.md",
+  "original_samples": [
+    {
+      "url": "https://raw.githubusercontent.com/thorstenMueller/Thorsten-Voice/29d0c153c55d8ffaa0ebf8ed1ecc879bff9fdf27/docs/samples/sample01-gt.wav",
+      "sha256": "09fb12ff218399a4e4eab6c592eb36bbe4743db9ce5249742129bc3add734ca1",
+      "text": "Eure Schoko-Bonbons sind sagenhaft lecker!"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/thorstenMueller/Thorsten-Voice/29d0c153c55d8ffaa0ebf8ed1ecc879bff9fdf27/docs/samples/sample03-gt.wav",
+      "sha256": "1892697190fe190f41037a1c5ac4e02b60d6f4a490408ab3b1b88a490b3b6750",
+      "text": "Europa und Asien zusammengenommen wird auch als Eurasien bezeichnet."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/thorstenMueller/Thorsten-Voice/29d0c153c55d8ffaa0ebf8ed1ecc879bff9fdf27/docs/samples/sample04-gt.wav",
+      "sha256": "26677c36031105ee307c5f819d7a4dfa2790d27b2d2f03012c306019b9d4a771",
+      "text": "Euer Plan hat ja toll geklappt."
+    }
+  ],
+  "reference_preparation": "FFmpeg resample each to 24 kHz mono, concatenate original ground-truth phrases 01,03,04 in that order, PCM16 output; no generated TTS samples used",
+  "reference_seconds": 9.54,
+  "reference_file": "l-german-public-reference.wav",
+  "profile_creation": "QWEN_NO_KLEIDI=1 <ENGINE>/qwen_tts -d <MODELS>/base --ref-audio <REFERENCE> --ref-text <CONCATENATED_TEXT> --save-voice <GERMAN_PUBLIC_PROFILE> --voice-name PublicGermanReference -l German",
+  "profile_bytes": 16813795,
+  "clone_mode": "ICL; fresh processes use --load-voice only",
+  "listening": "M sounds recognizably like L. N is also usable in English - with a slight accent though, but this time is fine.",
+  "scope": "Internal diagnostic, no new shipped voice proposed",
+  "interpretation": "German likeness accepted; English usable with an accepted slight accent. Initial short-sample listening passed. Changing speaker and reference together does not isolate the effect of reference language; broader corpus/seeds and personal likeness remain untested."
+}

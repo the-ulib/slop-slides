@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-09",
+  "classification": "Standalone CPU App Sandbox diagnostic; not Tauri or App Store distribution acceptance",
+  "host": "Apple M4 Pro, macOS 26.6.2",
+  "signing": [
+    "ad-hoc",
+    "Apple Development"
+  ],
+  "parent_entitlements": {
+    "com.apple.security.app-sandbox": true
+  },
+  "worker_entitlements": {
+    "com.apple.security.app-sandbox": true,
+    "com.apple.security.inherit": true
+  },
+  "deep_strict_signature_verification": "passed",
+  "known_existing_outside_fixture": "read denied in both sandbox bundles; readable in unsandboxed negative control (exit 2)",
+  "bundled_models_and_worker": "load and synthesis passed",
+  "container_output": "WAV written in private Application Support; worker exited normally",
+  "remaining": [
+    "Tauri integration",
+    "profile storage/import",
+    "security-scoped selected-file export",
+    "GPU if adopted",
+    "cancel/crash cleanup",
+    "App Store distribution signing/provisioning/review"
+  ]
+}

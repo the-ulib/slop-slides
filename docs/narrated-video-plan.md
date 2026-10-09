@@ -1,0 +1,245 @@
+# Local narration and presentation video export
+
+Proposal — 8 October 2026; PoC completed 9 October 2026. See the [feasibility report](narration-feasibility.md).
+
+**Decision:** proceed to implementation with the native C Qwen3-TTS 0.6B CPU candidate, BF16 with Kleidi packing disabled. Local stock English/German speech, reusable human-reference presenters, resident model reuse/cancellation, signed sandbox CPU inference and a native one-slide MP4 have working evidence. Engine peak memory was approximately 3.0–3.1 GiB on the tested M4 Pro/48 GiB Mac. This is sufficient for the PoC; minimum hardware, full-app behavior and App Store eligibility remain unverified.
+
+## Current status and session handoff
+
+Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phases 1–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
+
+### Completed PoC evidence
+
+- [x] Concept, right-sidebar Chat/Narration layout and saved-presenter semantics documented; standalone mockup stored with the plan. Its controls are simulated and predate the saved-presenter refinement.
+- [x] Official 0.6B CustomVoice/Base packs pinned, sizes/checksums verified; native C built and self-tested.
+- [x] Official Qwen reference comparison and user listening: native BF16 preferred, lower-memory BF16 close, German stock speech approved. The user approved a pitch-preserving 1.10× audition for longer English.
+- [x] A roughly 16 MB saved Base profile reused in fresh processes without the recording/transcript. German-reference clone likeness accepted; English usable with a slight accepted accent. An English-reference clone retained an unwanted American accent in German, including official Qwen output.
+- [x] Resident API probe loaded one model, generated English/German, cancelled after eight frames, then reproduced the first English WAV byte-for-byte. Peak RSS 3.037 GiB; load 1.612 s, later repeat 4.896 s for 11.76 s audio. This is a single diagnostic run, not full-app/baseline qualification.
+- [x] Ad-hoc and Apple Development signed App Sandbox probes loaded bundled CPU models/worker, wrote private-container audio and exited. Outside-file denial and an unsandboxed negative control verified enforcement.
+- [x] Hidden WKWebView snapshot and AVFoundation one-slide H.264/AAC MP4 verified. Source/AAC alignment confirms the original slow pace came from synthesis, not export.
+- [x] Engine/source/build and licenses reviewed; the Apple Make compatibility patch is retained. Final notices and a Kleidi vendored-provenance discrepancy remain release tasks.
+- [x] Repository checks passed: 677 frontend tests, 224 Rust tests, typecheck/build, formatting and clippy.
+
+Evidence: [initial review/measurements](narration-feasibility.md), [listening clips and replies](feasibility/listening-2026-10-09/README.md), [resident-model results](feasibility/resident-2026-10-09/README.md), [sandbox result](feasibility/listening-2026-10-09/sandbox-results.json), [runtime audit](feasibility/listening-2026-10-09/runtime-audit.md), [narrated MP4](feasibility/narrated-slide.mp4), and [reproduction/test cases](../dev/feasibility/README.md).
+
+### Checks carried into implementation
+
+| Check still unproven | Where it belongs |
+| --- | --- |
+| Native pace processing, broader stock corpus/seeds, real worker IPC/lifecycle, total app memory | Phase 2 |
+| Full-deck assets/timing, long export, cancellation/disk failures | Phase 3 |
+| User's own voice, broader clone likeness/pronunciation, recording/import/default presenter UX | Phase 4 |
+| Baseline-device support claims, cold/clean-machine installation, integrated Store sandbox/file permissions, distribution signing and final notices | Phases 2/5, before advertising support/distribution |
+| Native Windows/Linux inference and encoding | Phase 5 |
+
+An 8 GiB Mac was not tested. No full-product quality or Store promise follows from this PoC. Recommend setup recording in the primary narration language and preview every intended language; accent removal is not guaranteed.
+
+### Resume here in another session
+
+1. Read `CLAUDE.md`, this plan and the reproduction README. **The next implementation step is Phase 1**, not another research/listening loop. Keep local/no-paid-fallback, right-sidebar layout and saved-presenter semantics.
+2. Use the pinned C/BF16/no-Kleidi configuration as the prototype starting point. The official Python environment and FFmpeg auditions are development tools, not end-user dependencies.
+3. Reuse scratch resources if they still exist and match hashes; `/private/tmp` may be cleared. Rebuild/download from pinned instructions if absent.
+
+| Scratch resource | Local path |
+| --- | --- |
+| C checkout / CLI | `/private/tmp/slopslide-tts-feasibility-c/` / `qwen_tts` |
+| Model packs | `/private/tmp/slopslide-qwen-models/cv/` and `/private/tmp/slopslide-qwen-models/base/` |
+| Saved public-reference profiles | `/private/tmp/slopslide-lj-public.qvoice` and `/private/tmp/slopslide-thorsten-public.qvoice` |
+| Initial raw evidence | `/private/tmp/slopslide-tts-evidence/` |
+| Resident probe output | `/private/tmp/slopslide-resident-poc-2026-10-09/` |
+| Development signed sandbox probe | `/private/tmp/slopslide-sandbox-devsigned-2026-10-09/` |
+| Official reference Python | `/private/tmp/slopslide-qwen-official-venv/` |
+
+The plan, mockup, PoC probe sources and retained evidence are committed locally on **`codex/narration-poc`**. No PR, push or publication has been created. Production application code is unchanged. Large model packs, third-party executables and presenter profiles remain scratch resources and are excluded from the commit.
+
+## Product concept
+
+Turn a deck into a narrated video entirely on the user's computer. Qwen3-TTS 0.6B generates speech, a timeline connects narration to slides, and a native encoder produces an MP4. Once the required models and deck assets are available locally, synthesis and export require no network and incur no API charges. Optional script drafting still uses the user's configured agent and its existing costs/data handling.
+
+First release: English and German; one voice per deck; editable narration for every slide; local preview; 1920×1080 H.264/AAC MP4; static slides at their final visual state. Voice cloning is the next milestone on the same architecture. No promise of real-time synthesis or universal hardware support before measurements.
+
+Mac is the first complete video-export target. Preserve platform-neutral narration and timeline interfaces, then add Windows/Linux video backends. Do not make cloud TTS a dependency or automatically fall back to a paid provider.
+
+## User experience
+
+### Interactive mockup
+
+Open the [narration experience mockup](mockups/narration-experience.html) in a browser. This standalone copy is stored with the plan so it remains available outside the chat. It includes these interactive views:
+
+- **Editor:** slide thumbnails, center preview and Chat/Narration tabs in the right sidebar. Select slides, edit a script and simulate regeneration.
+- **Local speech setup:** open **Speech settings** to explore installed voices and optional cloning setup.
+- **Voice setup:** choose **Use my voice…**, then record/import to explore the sample, transcript, permission and preview steps.
+- **Video export:** choose **Export video** to explore preparation, progress and completion.
+
+This is a UX prototype: recording/import, speech playback, generation and video export are simulated. It does not generate files or access a microphone. The optional below-slide placement control has been removed from this saved copy.
+
+The mockup illustrates the initial flow and predates the saved-presenter refinement below. Its **Voice / Use my voice…** controls must become **Presenter / Add my voice…**, with presenter management, a default-for-new-decks checkbox and persistent profiles. Those behaviors are specified in the plan but are not implemented in this mockup. The written requirements below take precedence where the prototype differs.
+
+### Editor layout and workflow
+
+Keep the existing three-column editor: slide thumbnails on the left, the slide preview in the center, and the existing right sidebar. **Chat** and **Narration** are tabs in that right sidebar. Chat remains on the right; switching tabs replaces the sidebar content while keeping the selected slide visible. The area below the slide holds compact playback controls and status only. There is no bottom-panel or alternative-position setting for Chat or Narration.
+
+1. Select the **Narration** tab in the right sidebar. It shows the selected slide's script, voice, language, preview control and generation state. If a toolbar shortcut is provided, it opens this same tab.
+2. Choose **Draft narration** for a slide or the whole deck, or write it manually. An optional audience and target duration guide drafting. The script explains the slide rather than reading every visible word. Target duration is an estimate until audio exists.
+3. On first use, show the exact speech-pack download size, disk requirement and local processing explanation. Allow cancel/resume and removal in settings. Distribution of model resources for the Store build must pass the packaging milestone below.
+4. Select a preset voice and language; generate a short preview. Show **Not generated**, **Generating**, **Ready**, **Needs regeneration**, or **Failed** for each slide.
+5. **Generate narration** processes pending slides with progress, cancellation and per-slide retry. Let users keep or regenerate a take. Already accepted takes remain unchanged.
+6. Preview the complete narrated deck with the same timeline that export uses. Silence is explicit: an empty script requires a chosen silent-slide duration or a request to draft narration.
+7. **Export video** shows total duration and unresolved items, asks for a destination and renders a frozen copy of the deck. Report completion only after the MP4 has finalized successfully.
+
+### Saved presenters and one-time voice setup
+
+The Narration tab contains a **Presenter** picker listing preset voices and saved personal presenters, for example **Uli · My voice**. Language is a separate choice. **Add my voice…** and **Manage presenters** are available from the picker; users do not repeat voice setup for every deck.
+
+The setup flow is **Narration → Presenter → Add my voice…**:
+
+1. Name the presenter, for example **Uli**.
+2. Record a supplied passage or import a clean recording of one speaker. Suggest 10–20 seconds as a product starting point, subject to model/runtime tests. Allow trimming and confirm permission to create and use the voice.
+3. Confirm or correct the transcript. A supplied reading passage avoids requiring a separate transcription model for microphone recording.
+4. Generate and listen to a test sentence. Offer **Sounds good** or **Try another recording** before accepting the profile.
+5. **Save presenter**, with an optional **Use by default for new presentations** checkbox.
+
+Explain this as saving a reusable voice, not training a model. Qwen conditions synthesis on the saved reference recording and transcript; cache reusable derived conditioning where the selected engine supports it. Keep the original reference and versioned derived data locally so the presenter survives app restarts and can be reused without recording again. Do not upload these resources through the drafting agent or include them in HTML/video exports.
+
+Each deck remembers its selected presenter. New decks copy the application default presenter at creation; later changes to that default do not change existing decks. Choosing another presenter marks the deck's narration as needing regeneration while retaining previous takes until replacement succeeds. The presenter picker and preview should be usable with preset voices before the cloning milestone ships.
+
+**Manage presenters** supports renaming, previewing, replacing the reference recording, setting the default and deleting a presenter. Renaming does not invalidate audio. Replacing a reference creates a new profile revision; decks using that presenter require regeneration on their next load, with previous takes preserved. Presenter profiles belong to this computer initially; explicit profile export/import or synchronization is deferred.
+
+A voice deletion removes the reference and derived profile; explain that existing narration recordings and previously exported videos remain unless separately deleted. Switching computers can preserve rendered audio while requiring voice re-import to regenerate it.
+
+If a presenter is missing or deleted, identify it by its saved display name and ask the user to choose a replacement before generating new speech. Existing accepted audio remains playable and exportable. Deleting the application default clears that preference; new decks fall back to an available preset or prompt for a presenter, never silently change an existing deck's voice.
+
+Tab switching preserves the chat draft, conversation, narration edits and generation progress. A running agent or speech job continues when its tab is inactive. After drafting narration in Chat, a **Review narration** action opens the Narration tab for the selected slide. Changing slides updates the narration editor after preserving the previous slide's edits. Voice setup and export use dialogs, keeping the main editor layout stable.
+
+## Model and runtime decision
+
+Use **Qwen3-TTS-12Hz-0.6B-CustomVoice** for stock voices and **Qwen3-TTS-12Hz-0.6B-Base** for cloning. These are distinct checkpoints: Base is not a preset-voice model. Install only the pack the user needs and share compatible tokenizer/codec resources. Load one model at a time. A cloning-first user can use Base without downloading CustomVoice.
+
+The tested official packs occupy approximately 2.50 GB for CustomVoice or 2.52 GB for Base, including codec/tokenizer resources; both use about 4.33 GB when the identical speech-tokenizer weights are shared. The tested `--int8` flag quantizes at runtime and does not reduce these downloads. Installation/update needs additional temporary disk space. Show verified pack sizes in setup rather than inferring them from the 0.6B parameter count.
+
+Continue with the native C implementation as the provisional Mac candidate: CPU inference, English/German, Base profile save/reload and native dependencies were reproduced. The Rust/Candle candidate compiled with Metal/Accelerate and generated a short WAV on Metal, but has not passed equivalent quality, memory or cloning checks. It remains an alternative. Use official Qwen inference as a quality reference during development; do not require Python on end-user machines. The C candidate documents Windows through WSL2 beta; shipping a native Windows application requires a separate inference portability spike as well as a video backend.
+
+Qualify **BF16 with Kleidi packing disabled** first: user listening favors it and it used less RAM than the original int8 configuration on this host. Keep default-packed BF16 as the quality comparison. Do not prefer int8 merely from its label; test actual memory and speech quality, including cloning. Ship int8/4-bit only after equivalent acceptance. Do not equate a quantized transformer weight size with full installed size or peak RAM. Measure the tokenizer, speech encoder/decoder, buffers and app together.
+
+The initial C tests used mixed precision even with `--int8`. Disabling Kleidi packing (`QWEN_NO_KLEIDI=1` at the tested revision) reduced measured peak memory, but changes numerical paths and sampled output. Treat it as an experimental configuration requiring listening and baseline-device validation. Neither this flag nor the 4-bit option establishes that the whole application fits an 8 GiB machine. Preserve the ability to revise supported hardware or engine selection before building the complete UI.
+
+Use a bundled, versioned native worker with framed local IPC, no HTTP server, and no shell evaluation. Keep the model warm across a deck's generation job, unload after idle/low-memory notification, and enforce a single active synthesis job initially. The worker provides crash isolation and a hard cancellation boundary. Standalone CPU signing/inheritance passed; integrated Tauri lifecycle, file access and any GPU path still need proof early on macOS; an in-process adapter is the fallback if the worker architecture fails those tests.
+
+Pin the engine revision, model revision, quantization recipe and resource checksums. Audit actual license files and transitive dependencies before adoption; a README license statement is insufficient for release. Downloads are allowlisted model data, never scripts, executable plugins or runtime updates.
+
+## Data and integration design
+
+Keep narration outside `deck.html` in a versioned, human-readable `narration.json` beside it. Existing HTML presentation/export behavior stays intact. The manifest is source data; generated audio is rebuildable, but useful for portable playback.
+
+```text
+<deck>/
+  deck.html
+  narration.json                 scripts, language, voice reference, pauses, accepted takes
+  .slopslide/narration/audio/     immutable generated WAV takes and metadata
+  .slopslide/narration/jobs/      resumable generation/export manifests
+
+<application support>/
+  speech/models/                 verified model packs shared by all decks
+  speech/voices/                 private reference recordings and derived voice data
+```
+
+Proposed manifest fields: `schemaVersion`, `revision`, `presenterId`, `presenterNameSnapshot`, `defaultLanguage`, and `slides[slideId]` containing `text`, `languageOverride`, `leadInMs`, `tailMs`, `silentDurationMs`, `acceptedTakeId`, and `reviewedSlideHash`. `presenterId` is the deck's explicit choice, distinct from the application preference `defaultPresenterId`. The presenter registry maps stable IDs to preset voices or local reference profiles, recording their display names, revisions and compatible engine/model identifiers. Keep reference audio, transcript and derived conditioning in private application storage. Persist no absolute machine paths or private reference audio in the deck manifest. Take metadata records the source-text hash, presenter ID/profile revision, model/runtime versions, seed, synthesis options, PCM sample rate/count and content checksum.
+
+- Reordering slides changes the timeline only. Hidden slides are excluded by default.
+- Duplicating a slide copies its script and may reuse identical audio. Deletion archives its narration for undo; restore both together.
+- If an external agent replaces slide IDs, preserve orphaned scripts for recovery instead of silently assigning them by position.
+- Text, voice, language or synthesis settings invalidate audio. A visual edit marks the script **Review needed**, but does not spend compute regenerating unchanged speech. Pauses affect the timeline only.
+- Use atomic, revision-checked writes so the agent and narration editor cannot overwrite each other silently. Extend deck snapshots to cover narration source and accepted-take references; retain referenced audio when pruning cache.
+- Handle narration-file changes separately in the watcher/store. The watcher currently ignores `.slopslide`, so generated audio completion must emit explicit narration events rather than relying on file events.
+- Agent drafting writes the documented manifest or uses a validated command. Narration lint checks schema, slide IDs, languages and numeric bounds. Update prompt instructions and their applicable tests; if HTML format/runtime rules change, update the existing HTML linter as required by the repository.
+- Standard single-file HTML export remains visual-only in v1. A portable narrated HTML/deck bundle is a later feature. Copying the full deck directory retains audio; copying `deck.html` alone does not.
+
+Proposed backend modules:
+
+| Module | Responsibility |
+| --- | --- |
+| `narration.rs` | Manifest, revisions, slide lifecycle and cache metadata |
+| `speech/models.rs` | Pack installation, validation, removal and disk limits |
+| `speech/worker.rs` | Runtime adapter, warm model, progress and cancellation |
+| `speech/voices.rs` | Presenter registry, application default, reference import/recording, transcripts and versioned private profiles |
+| `video/timeline.rs` | Sample-accurate narration intervals and slide boundaries |
+| `video/render.rs` | Frozen deck resources, render readiness and slide frames |
+| `video/macos.rs` | AVFoundation MP4 writing |
+
+Expose typed Tauri commands through `src/lib/api.ts`: load/save narration, list/install/remove packs, create/delete voice, generate/cancel narration, and start/cancel video export. Events include job ID, deck ID, source revision, stage and completed/total work. Ignore stale completions after edits, cancellation or deck changes. Keep binary audio outside JSON events and serve it through a narrowly scoped local asset mechanism.
+
+Frontend additions: a tabbed container in the existing right sidebar hosting `ChatPanel` and the new `NarrationPanel`, plus `VoiceLibrary`, `SpeechSetup` and `VideoExportDialog`. Integrate the active sidebar tab and narration state into `src/store.ts`; keep tab-independent drafts and jobs outside component-local lifetimes. Retain the existing sidebar resizing/collapse behavior. `TopBar` provides video export and any shortcut that opens the Narration tab. Place compact playback controls/status below the center slide, and reuse existing player/slide components where appropriate. Do not add a bottom editor panel or a sidebar-placement preference.
+
+For cloned presenters, the setup preview must include each intended narration language. Record the reference language in the profile and show the actual generated preview before saving/preselecting it. An English reference produced recognizable likeness but a strong American accent in German, including in official Qwen inference; do not promise automatic accent removal. If a target-language preview is poor, allow a new reference or a stock presenter. The German-reference test produced recognizable German likeness and usable English with a slight accepted accent. Recommend recording the setup passage in the presenter's primary narration language, then auditioning every intended output language. This is a product default to validate on more speakers, not proof that reference language alone fixes accents.
+
+## Synthesis and timeline
+
+Split long scripts at sentence boundaries within the selected engine's tested limits. Use the same reference conditioning for every chunk, track offsets, and join PCM with controlled silence. Avoid cutting words or hiding engine truncation. Flag malformed, empty, non-finite or unexpectedly long outputs; bound retries rather than looping indefinitely. Pronunciation improvements initially come from editable scripts rather than an unsupported SSML interface.
+
+Cache by normalized spoken text, language, voice-profile revision, model checksum, engine version, quantization and synthesis settings/seed. Preserve the chosen WAV take so exports remain stable even when floating-point inference is not bitwise deterministic across devices.
+
+Compute durations from decoded sample counts, never word count. Each slide occupies lead-in silence + actual audio + tail silence, or an explicit silent duration. Start with 250 ms lead-in and 500 ms tail defaults, editable by the user. Use an integer/rational timeline, resample to the encoder format once, and derive frame boundaries from cumulative time so rounding does not accumulate across slides. Pad the final frame/audio as required and test the encoded result's synchronization.
+
+No automatic word-level subtitles in v1: Qwen output is not guaranteed to supply reliable word timestamps. A later local forced-alignment stage can produce SRT/VTT without pretending estimated word durations are alignment.
+
+## Rendering and encoding
+
+The existing `SlideImageExport.tsx` captures the displayed slide after a fixed 400 ms delay. Reuse its sequencing and native `capture.rs` primitives, but do not call that sufficient for reliable 1080p export.
+
+Create a dedicated render surface with fixed 1920×1080 output independent of the editor window and display scale. Determine during the spike whether WKWebView snapshotting renders correctly when offscreen/occluded; use a controlled visible export surface if necessary. Wait for fonts, decoded images, layout and a paint acknowledgement with a timeout and explicit missing-resource errors. Freeze and localize external resources for the job; a job must not mix different deck revisions.
+
+A standalone hidden WKWebView successfully rendered the static fixture. The probe exposed two implementation requirements: hidden views can suspend `requestAnimationFrame`, and snapshot widths in points can produce Retina-sized output. Use bounded readiness with a validated hidden-view fallback and normalize the resulting pixel dimensions explicitly. Validate real deck assets and the existing animation final-state mechanism in the integrated renderer; the simple fixture does not establish those behaviors.
+
+Use the existing final-animation-state mechanism for static slides. Review marks and editor controls are excluded. Detect embedded video, animated canvas and other unsupported content and disclose what will be flattened; do not claim animated export. Crossfades and deterministic HTML animation capture come later.
+
+On macOS, use AVFoundation/AVAssetWriter for H.264 video and AAC audio in MP4. Stream reusable slide frames into the encoder with backpressure instead of accumulating a full movie in RAM. Keep the native encoding bridge behind a platform interface. Write to a temporary output on the destination volume and publish it only after successful finalization; cancellation or failure must not destroy an existing export.
+
+On Windows/Linux, validate an appropriately licensed bundled encoding backend separately. Do not require system-installed FFmpeg; audit any FFmpeg build configuration, linked codecs, notices and redistribution obligations before shipping it.
+
+## App Store and privacy work
+
+Run an early signed sandbox build with model loading, worker launch, Metal/CPU inference and file export. Models and private voices live in the application container; user-selected import/export locations use the platform's authorized file access and persistent bookmarks where necessary. Microphone recording needs a clear purpose string and permission; importing audio should work without microphone permission.
+
+For the first Store submission, prefer a reviewed bundled model resource strategy. If on-demand model data is used, validate it against Apple's current resource/download rules, disclose sizes and make all functionality available to review. Do not assume that calling a download “weights” guarantees acceptance. The app must never download executable inference code.
+
+Document local voice processing, retention and deletion. Obtain the speaker's authorization to create/use their clone. Never imply that an open model license grants rights to another person's voice or sample. No audio/text telemetry by default. The user's existing agent can receive narration text for drafting, but should never receive private clone samples.
+
+Whole-app Store readiness remains a separate dependency: the current externally installed agent CLIs and library filesystem access need review/redesign. Completing narration does not certify the rest of slop-slides for submission.
+
+## Implementation sequence and acceptance criteria
+
+| Phase | Current status | Deliverable | Exit criteria |
+| --- | --- | --- | --- |
+| 0a — Standalone technical spike | **Complete** | Native runtime probes, model-size/memory screen, reusable profile, one-slide MP4 | Working evidence and reproducible sources exist on the tested host. |
+| 0b — PoC acceptance | **Complete at PoC scope** | Listening acceptance, resident-model reuse/cancellation, signed CPU sandbox proof and prototype configuration | The narrow PoC questions have evidence. Broader product/device/release checks are explicitly assigned to phases 2–5 above. |
+| 1 — Narration source | **Not started** | Manifest, Chat/Narration tabs in the existing right sidebar, script editing/drafting and lifecycle handling | Old decks load unchanged. Tab switching preserves drafts, edits and running jobs; Review narration opens the correct tab. Chat stays on the right, and only playback controls/status sit below the slide. Reorder/duplicate/delete/undo, external edits, hidden slides and revision conflicts behave correctly. |
+| 2 — Local speech | **Not started** | Pack management, worker, stock voices, preview, cache and jobs | Works offline after installation; only changed narration regenerates; interrupted downloads recover; cancel/crash preserves accepted takes and frees worker resources. |
+| 3 — Complete video | **Not started** | Frozen render job, timeline, whole-deck preview and Mac MP4 | 10-minute deck exports at 1080p with correct order, no missing assets, no clipped endings and ≤1-frame boundary error. Resize, cancel, disk-full and simultaneous editing tests pass. |
+| 4 — Saved presenters | **Not started** | Base pack, one-time import/record wizard, Presenter picker and Manage presenters | Saved voices survive restart and work across decks without recording again. Default applies only to new decks; each existing deck retains its choice. Renaming preserves audio; replacing references invalidates affected takes. Clone remains recognizable across a full English/German test deck; references stay local; deletion and missing-profile recovery preserve existing audio. |
+| 5 — Distribution | **Not started** | Signed installers, Store packaging work and additional video backends | Clean-machine install and offline generation pass on each advertised platform; licences/notices/resources are pinned; sandbox, privacy and filesystem checks pass. |
+
+Remaining-effort estimates from the original review: phase 1 4–8, phase 2 8–16, phase 3 8–16, phase 4 6–12, Mac distribution preparation 12–24+. These are rough implementation/test estimates, not deadlines; they exclude external access, Apple review, additional-platform work and any major runtime or whole-app Store redesign. Phase 0 has no remaining PoC work; the estimates for later phases include the deferred product checks and remain rough.
+
+Phase 0 must include both stock and cloned speech even though the cloning UI ships later. Otherwise we could choose an engine that makes the bonus feature impractical. Phases 1–3 deliver useful narration without requiring users to record themselves. Phases 4–5 complete the intended cloning/distribution path.
+
+Proposed performance targets, not measured promises: a 10-minute narration job completes within 10 minutes on a baseline Apple Silicon Mac and within 20 minutes on a representative CPU-only Windows laptop; total app plus worker memory stays below 4 GiB on an 8 GiB baseline system without sustained swap pressure. The default C build already exceeds this memory budget in isolated tests. Even the lower-memory candidate leaves limited headroom for the app and WebKit, so 8 GiB support is a go/no-go test rather than a feature claim. Measure an M1-class 8 GiB Mac, a modern 16 GiB x86 Windows laptop with no discrete GPU, and Linux before advertising that platform. Include Intel Mac if continuing to advertise Intel support. If targets fail, quantify the supported hardware/precision tradeoff before building the full UI.
+
+Listening corpus: short titles, 30–90 second paragraphs, dates, decimals, currencies, URLs, abbreviations, technical terms, German compound words and language switches. Repeat representative samples across seeds; record omissions, repeats, pronunciation errors, natural presentation pacing, clone similarity and audible joins. The first MP4 sample's approximately 99-word-per-minute delivery was flagged as too slow; waveform comparison places that pacing in synthesis, not export. The official comparison is complete and native BF16 was preferred, and a 1.10× pace audition for longer English was approved. Add a modest speaking-pace control (initial qualification point: 1.10×); preserve pitch, audition it, and derive preview/export durations from the processed PCM sample count. Include its setting in cache keys and preserve the accepted take. Automated audio checks cannot replace listening.
+
+Use unit tests for manifest reconciliation, cache invalidation, cancellation and rational timeline math; integration tests for worker failure and model integrity; native smoke tests for audio decoding and real MP4 playback. Add frontend tests for user-visible generation states and recovery. Run the repository's `./check.sh` for implementation changes. Heavy model tests should be an explicit release suite rather than downloading gigabytes on every unit-test run.
+
+## Deferred scope
+
+Animated HTML/video capture, word-level captions, background music/ducking, multiple speakers per slide, narrated HTML export, cloud providers and 1.7B quality packs. The data/provider interfaces allow these later, but the first end-to-end feature is a reliable locally narrated video.
+
+## Primary references
+
+- [Official Qwen3-TTS models and model distinctions](https://github.com/QwenLM/Qwen3-TTS)
+- [Qwen 0.6B Base model card and license](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base)
+- [Native C runtime candidate](https://github.com/gabriele-mastrapasqua/qwen3-tts)
+- [Rust/Candle runtime candidate; explicitly experimental](https://github.com/TrevorS/qwen3-tts-rs)
+- [Apple AVAssetWriter](https://developer.apple.com/documentation/avfoundation/avassetwriter)
+- [Apple App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+- [FFmpeg licensing considerations](https://www.ffmpeg.org/legal.html)
+
+The linked feasibility report distinguishes reproduced behavior from upstream claims and records tested revisions. Its diagnostic measurements are not minimum-hardware or production benchmarks. Recheck licences, platform support and packaging against the actual release build.

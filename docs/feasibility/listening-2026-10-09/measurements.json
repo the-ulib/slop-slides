@@ -1,0 +1,308 @@
+{
+  "classification": "Diagnostic CLI, fresh process/warm filesystem, shared M4 Pro 48 GiB host; instrumented, not baseline hardware or controlled ranking",
+  "engine_sha256": "0e48c8650273f99ff66ca26765978e9c386523d86490686c2ae6118b798816d6",
+  "results": [
+    {
+      "case": "bf16-en",
+      "wall_seconds": 5.117,
+      "audio_seconds": 11.76,
+      "total_rtf": 0.435,
+      "peak_rss_bytes": 3220455424,
+      "command": [
+        "<ENGINE>/qwen_tts",
+        "-d",
+        "<MODELS>/cv",
+        "--text",
+        "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas.",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "<EVIDENCE>/bf16-en.wav",
+        "-s",
+        "ryan"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "<EVIDENCE>/bf16-en-census.json",
+        "QWEN_DISPATCH_JSON": "<EVIDENCE>/bf16-en-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      }
+    },
+    {
+      "case": "bf16-de",
+      "wall_seconds": 6.259,
+      "audio_seconds": 11.92,
+      "total_rtf": 0.525,
+      "peak_rss_bytes": 3229548544,
+      "command": [
+        "<ENGINE>/qwen_tts",
+        "-d",
+        "<MODELS>/cv",
+        "--text",
+        "Gute Arbeit braucht Ruhe. In dieser Pr\u00e4sentation zeigen wir drei einfache Wege, Unterbrechungen zu reduzieren, die eigene Aufmerksamkeit zu sch\u00fctzen und Raum f\u00fcr bessere Ideen zu schaffen.",
+        "-l",
+        "German",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "<EVIDENCE>/bf16-de.wav",
+        "-s",
+        "ryan"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "<EVIDENCE>/bf16-de-census.json",
+        "QWEN_DISPATCH_JSON": "<EVIDENCE>/bf16-de-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      }
+    },
+    {
+      "case": "bf16-long-en",
+      "wall_seconds": 23.876,
+      "audio_seconds": 42.48,
+      "total_rtf": 0.562,
+      "peak_rss_bytes": 3266936832,
+      "command": [
+        "<ENGINE>/qwen_tts",
+        "-d",
+        "<MODELS>/cv",
+        "--text",
+        "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas. Begin by choosing a single priority for the morning. Turn off notifications and close the applications you do not need. Tell your colleagues when you will be available again. After a focused session, take a short break away from the screen. These changes do not require a perfect schedule. Try one small experiment this week, observe what helps, and adjust your routine. The goal is to create enough quiet time to think clearly and finish work that matters.",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "90",
+        "-o",
+        "<EVIDENCE>/bf16-long-en.wav",
+        "-s",
+        "ryan"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "<EVIDENCE>/bf16-long-en-census.json",
+        "QWEN_DISPATCH_JSON": "<EVIDENCE>/bf16-long-en-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      }
+    },
+    {
+      "case": "bf16-clone-en",
+      "wall_seconds": 6.3,
+      "audio_seconds": 11.04,
+      "total_rtf": 0.571,
+      "peak_rss_bytes": 3309453312,
+      "command": [
+        "<ENGINE>/qwen_tts",
+        "-d",
+        "<MODELS>/base",
+        "--text",
+        "Tomorrow morning, protect one quiet hour for the task that matters most. A saved presenter lets you narrate another presentation without recording your voice again.",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "<EVIDENCE>/bf16-clone-en.wav",
+        "--load-voice",
+        "<PUBLIC_PROFILE>"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "<EVIDENCE>/bf16-clone-en-census.json",
+        "QWEN_DISPATCH_JSON": "<EVIDENCE>/bf16-clone-en-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      },
+      "reference": "LJ001-0001 (English)"
+    },
+    {
+      "case": "bf16-clone-de",
+      "wall_seconds": 6.286,
+      "audio_seconds": 13.2,
+      "total_rtf": 0.476,
+      "peak_rss_bytes": 3327197184,
+      "command": [
+        "<ENGINE>/qwen_tts",
+        "-d",
+        "<MODELS>/base",
+        "--text",
+        "Gute Arbeit braucht Ruhe. In dieser Pr\u00e4sentation zeigen wir drei einfache Wege, Unterbrechungen zu reduzieren, die eigene Aufmerksamkeit zu sch\u00fctzen und Raum f\u00fcr bessere Ideen zu schaffen.",
+        "-l",
+        "German",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "<EVIDENCE>/bf16-clone-de.wav",
+        "--load-voice",
+        "<PUBLIC_PROFILE>"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "<EVIDENCE>/bf16-clone-de-census.json",
+        "QWEN_DISPATCH_JSON": "<EVIDENCE>/bf16-clone-de-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      },
+      "reference": "LJ001-0001 (English)"
+    },
+    {
+      "case": "bf16-clone-en",
+      "wall_seconds": 5.66,
+      "audio_seconds": 9.92,
+      "total_rtf": 0.571,
+      "peak_rss_bytes": 3322740736,
+      "command": [
+        "<ENGINE>/qwen_tts",
+        "-d",
+        "<MODELS>/base",
+        "--text",
+        "Tomorrow morning, protect one quiet hour for the task that matters most. A saved presenter lets you narrate another presentation without recording your voice again.",
+        "-l",
+        "English",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "<EVIDENCE>/bf16-clone-en.wav",
+        "--load-voice",
+        "<GERMAN_PUBLIC_PROFILE>"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "<EVIDENCE>/bf16-clone-en-census.json",
+        "QWEN_DISPATCH_JSON": "<EVIDENCE>/bf16-clone-en-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      },
+      "reference": "Thorsten original German samples 01,03,04"
+    },
+    {
+      "case": "bf16-clone-de",
+      "wall_seconds": 7.438,
+      "audio_seconds": 11.44,
+      "total_rtf": 0.65,
+      "peak_rss_bytes": 3330932736,
+      "command": [
+        "<ENGINE>/qwen_tts",
+        "-d",
+        "<MODELS>/base",
+        "--text",
+        "Gute Arbeit braucht Ruhe. In dieser Pr\u00e4sentation zeigen wir drei einfache Wege, Unterbrechungen zu reduzieren, die eigene Aufmerksamkeit zu sch\u00fctzen und Raum f\u00fcr bessere Ideen zu schaffen.",
+        "-l",
+        "German",
+        "--seed",
+        "42",
+        "--max-duration",
+        "45",
+        "-o",
+        "<EVIDENCE>/bf16-clone-de.wav",
+        "--load-voice",
+        "<GERMAN_PUBLIC_PROFILE>"
+      ],
+      "controlled_environment": {
+        "QWEN_DISPATCH_MAP": "1",
+        "QWEN_SHAPE_CENSUS": "1",
+        "QWEN_CENSUS_JSON": "<EVIDENCE>/bf16-clone-de-census.json",
+        "QWEN_DISPATCH_JSON": "<EVIDENCE>/bf16-clone-de-dispatch.json",
+        "QWEN_NO_KLEIDI": "1"
+      },
+      "reference": "Thorsten original German samples 01,03,04"
+    }
+  ],
+  "retained_samples": {
+    "c-official-ryan.wav": {
+      "sha256": "a823aab5b251ee7a87a7202f719ac20ce4d126c98ec07964eb465f03836f6f1f",
+      "audio_seconds": 12.0
+    },
+    "e-native-bf16-german.wav": {
+      "sha256": "c3080e8049d8b597d50d90c6c18fa599b56745428073e77928856e98c01f9e0e",
+      "audio_seconds": 11.92
+    },
+    "f-native-bf16-paragraph.wav": {
+      "sha256": "c7b0db71059774173d3e57588e6375c3b208173a444c3b9c7b475f437296d33f",
+      "audio_seconds": 42.48
+    },
+    "official-aiden-reserve.wav": {
+      "sha256": "c920e2cf54f5f2a650158253e850b3d69b86e8a8c7c775221805f4da6013d4bb",
+      "audio_seconds": 9.12
+    },
+    "d-native-bf16-lowmem.wav": {
+      "sha256": "d0771e6412bdb48a0332be0e5b5fad473165af94450b5c2b6bb6488495312791",
+      "audio_seconds": 11.76
+    },
+    "b-native-bf16-ryan.wav": {
+      "sha256": "50fcbfd490381b98a8b166b10d48c4d32a42b74bf40bcdf33cbdfdc09113272c",
+      "audio_seconds": 10.72
+    },
+    "g-public-reference.wav": {
+      "sha256": "4d2bd83ff0f7fe33491b03193abdf623f1b4cc2d8103972b33638d3607d86dc5",
+      "sample_rate": 22050,
+      "audio_seconds": 9.65501133786848
+    },
+    "h-public-clone-en.wav": {
+      "sha256": "ccaa5d8b93b73a8f3bda5ab41b055b228800e35e46f7b59fe1410ea34c992ed5",
+      "sample_rate": 24000,
+      "audio_seconds": 11.04
+    },
+    "i-public-clone-de.wav": {
+      "sha256": "d3932eef32939eb84a1a03180b4a27d94d0250ababd18b8135f63736ab4a6e54",
+      "sample_rate": 24000,
+      "audio_seconds": 13.2
+    },
+    "j-official-public-clone-de.wav": {
+      "sha256": "b15c337ff83f142135ed6ce4194b1c82b43388592e2dcfa1ee7023a846f7252f",
+      "sample_rate": 24000,
+      "audio_seconds": 13.6
+    },
+    "k-paragraph-pace-110.wav": {
+      "sha256": "87109142839b5924454a32824033da48d0bc7ec44e5a9896a7e85b7b7ebe3e2f",
+      "sample_rate": 24000,
+      "audio_seconds": 38.60583333333334
+    },
+    "l-german-public-reference.wav": {
+      "sha256": "5c1c0774fb1d2613056f23f6f030f080428b1e956f98171a16ecd4107f9ca604",
+      "sample_rate": 24000,
+      "audio_seconds": 9.54
+    },
+    "m-german-reference-clone-de.wav": {
+      "sha256": "064ffd13003dbab2cd63a7c60aaec793863c6b38edbf7b48081e01bc62ba31c9",
+      "sample_rate": 24000,
+      "audio_seconds": 11.44
+    },
+    "n-german-reference-clone-en.wav": {
+      "sha256": "779591dd30767491b0cd484d8e2b0c033c793267886deba87a26103788570118",
+      "sample_rate": 24000,
+      "audio_seconds": 9.92
+    }
+  },
+  "listening_feedback": {
+    "A_B_C": "I like B best",
+    "D_vs_B": "D is very close to B. B sounds slightly better.",
+    "E_F": "E sounds great. F also sounds good, but still a bit slow",
+    "G_H_I": "I think it is close enough. But the german voice has a bad american accent.",
+    "J_K": "J still has an accent. is is especially noticable around the letter \"r\". K sounds great!",
+    "L_M_N": "M sounds recognizably like L. N is also usable in English - with a slight accent though, but this time is fine."
+  },
+  "pace_audition": {
+    "input": "f-native-bf16-paragraph.wav",
+    "output": "k-paragraph-pace-110.wav",
+    "command": "ffmpeg -v error -i <F> -af atempo=1.1 -ar 24000 -ac 1 -c:a pcm_s16le <K>",
+    "classification": "Deliberate 1.10x pitch-preserving diagnostic transform; not native generation or production implementation",
+    "listening": "User: K sounds great!"
+  }
+}

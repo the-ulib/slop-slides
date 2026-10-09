@@ -1,0 +1,36 @@
+{
+  "classification": "Official reference quality sample; not a throughput benchmark or numerical-parity test",
+  "packages": {
+    "qwen-tts": "0.1.1",
+    "torch": "2.14.1",
+    "transformers": "4.57.3",
+    "numpy": "2.2.6",
+    "soundfile": "0.14.0"
+  },
+  "device": "cpu",
+  "dtype": "float32",
+  "attention": "eager",
+  "threads": 4,
+  "speaker": "Aiden",
+  "language": "English",
+  "text": "Good work needs space. This presentation shows three simple ways to reduce interruptions, protect your attention, and make room for better ideas.",
+  "seed": 42,
+  "settings": {
+    "do_sample": true,
+    "top_k": 50,
+    "top_p": 1.0,
+    "temperature": 0.9,
+    "repetition_penalty": 1.05,
+    "subtalker_dosample": true,
+    "subtalker_top_k": 50,
+    "subtalker_top_p": 1.0,
+    "subtalker_temperature": 0.9,
+    "max_new_tokens": 600
+  },
+  "load_seconds": 0.564,
+  "generation_seconds": 14.573,
+  "sample_rate": 24000,
+  "sample_count": 218880,
+  "audio_seconds": 9.12,
+  "wav_sha256": "c920e2cf54f5f2a650158253e850b3d69b86e8a8c7c775221805f4da6013d4bb"
+}

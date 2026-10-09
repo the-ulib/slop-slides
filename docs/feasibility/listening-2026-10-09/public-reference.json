@@ -1,0 +1,19 @@
+{
+  "sample": "LJ001-0001",
+  "dataset": "LJ Speech",
+  "speaker": "Linda Johnson (LibriVox)",
+  "rights_source": "https://keithito.com/LJ-Speech-Dataset/",
+  "rights_statement": "Dataset maintainer identifies audio/text/metadata as public domain. Internal diagnostic reference only; no bundled product presenter is proposed.",
+  "mirror_revision": "dbf1a08a0d4e47fdad6172e433eeb34bc6b13b4e",
+  "audio_url": "https://raw.githubusercontent.com/coqui-ai/TTS/dbf1a08a0d4e47fdad6172e433eeb34bc6b13b4e/tests/data/ljspeech/wavs/LJ001-0001.wav",
+  "metadata_url": "https://raw.githubusercontent.com/coqui-ai/TTS/dbf1a08a0d4e47fdad6172e433eeb34bc6b13b4e/tests/data/ljspeech/metadata.csv",
+  "transcript": "Printing, in the only sense with which we are at present concerned, differs from most if not from all the arts and crafts represented in the Exhibition",
+  "original_rate": 22050,
+  "conditioning_rate": 24000,
+  "resampling": "ffmpeg PCM16 mono -ar 24000; resamples waveform, does not relabel its header",
+  "resampled_sha256": "b17435ff71e46147da22600bfe75b75b3cbb4d33a89a3e16dca2e91a573dd122",
+  "profile_creation": "QWEN_NO_KLEIDI=1 <ENGINE>/qwen_tts -d <MODELS>/base --ref-audio <RESAMPLED_REFERENCE> --ref-text <TRANSCRIPT> --save-voice <PUBLIC_PROFILE> --voice-name PublicReference -l English",
+  "profile_bytes": 16813867,
+  "fresh_process_reuse": "English and German generated with --load-voice only, no reference WAV/transcript",
+  "human_listening": "User: I think it is close enough. But the german voice has a bad american accent."
+}

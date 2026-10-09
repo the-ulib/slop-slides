@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-09",
+  "repository_check": "./check.sh passed: frontend 677, Rust 224, typecheck/build/format/clippy",
+  "probe_guards": "7 argument/overwrite rejection cases passed; existing bytes preserved; no output or engine launch",
+  "retained_audio": "All recorded WAV hashes/formats/durations verified",
+  "local_markdown_links": "verified",
+  "sandbox_wav": "Apple Development probe output externally verified mono PCM16/24 kHz, 4.72 seconds",
+  "scope": "Docs and standalone probes only; no production feature changes"
+}
