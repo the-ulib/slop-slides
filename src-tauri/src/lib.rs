@@ -188,6 +188,28 @@ fn speech_takes(
     speech::takes(&app, &id)
 }
 #[tauri::command]
+fn speech_history(
+    app: AppHandle,
+    id: String,
+    slide: String,
+) -> Result<Vec<speech::cache::HistoryTake>> {
+    speech::cache::history(&deck::deck_dir(&app, &id)?, &slide)
+}
+#[tauri::command]
+fn select_speech_take(
+    app: AppHandle,
+    id: String,
+    slide: String,
+    take_id: String,
+    base: String,
+) -> Result<narration::Document> {
+    let dir = deck::deck_dir(&app, &id)?;
+    if !deck::load(&dir, &id)?.slides.iter().any(|s| s.id == slide) {
+        return Err(error::Error::msg("Select an existing slide first."));
+    }
+    speech::cache::select(&dir, &slide, &take_id, &base)
+}
+#[tauri::command]
 async fn install_speech_pack(
     app: AppHandle,
     manager: State<'_, speech::SpeechManager>,
@@ -212,8 +234,11 @@ async fn generate_speech(
     job_id: String,
     id: String,
     slide: Option<String>,
+    fresh: Option<bool>,
 ) -> Result<speech::GenerationResult> {
-    manager.generate(app, job_id, id, slide).await
+    manager
+        .generate(app, job_id, id, slide, fresh.unwrap_or(false))
+        .await
 }
 #[tauri::command]
 fn cancel_speech(manager: State<speech::SpeechManager>, job_id: String) -> Result<()> {
@@ -493,6 +518,8 @@ pub fn run() {
             save_narration,
             speech_status,
             speech_takes,
+            speech_history,
+            select_speech_take,
             install_speech_pack,
             remove_speech_pack,
             generate_speech,

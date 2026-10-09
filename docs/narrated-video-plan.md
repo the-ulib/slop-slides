@@ -65,6 +65,12 @@ An 8 GiB Mac was not tested. No full-product quality or Store promise follows fr
 
 Provider, presenter and pace now default to **This slide** in Narration; choose **Deck defaults** explicitly for inherited settings. Editing a slide pins its resolved provider/voice/pace without changing other slides. **Use deck defaults** clears its speech overrides. Language and pauses remain per-slide. **Restore recording settings** recovers a stale recording when its script still matches. Narration schema 3 migrates versions 1/2 without changing source settings or accepted take references. See the [follow-up handoff and actual native screenshot](implementation/narration-slide-settings.md).
 
+### Recording history and simpler narration — 9 October follow-up
+
+The selected slide now shows its script, **Draft narration**, presenter, generation state and **Preview narrated deck**. Language/pace/provider/pauses/deck defaults move into **Voice & timing**; whole-deck generation and drafting preferences use separate closed disclosures. Silent slides still show their effective 5-second duration. Chat stays in the right sidebar and playback stays below the slide.
+
+**Recording history** lists that slide’s takes with date, presenter, pace, duration and original script. **Listen to this recording** previews without changing the video selection. **Use this recording**, or **Use recording & script** when the words differ, explicitly restores its source and accepts it for preview/export. **Generate another take** bypasses cached audio and preserves earlier takes. Local deterministic synthesis can sound identical for unchanged inputs; no sampling/quality defaults changed. See the [implementation handoff and actual native screenshots](implementation/narration-recording-history.md). This live layout supersedes the earlier mockup’s crowded narration controls.
+
 ### Phase 3 implementation and handoff
 
 Narration now offers **Preview narrated deck**, with play/pause/seek and synchronized frozen slide images. **Export → Narrated MP4** produces static 1080p/30 fps H.264/AAC video through the bundled macOS helper, with progress and cancellation. Slides with scripts need current accepted speech; slides without narration use an editable 5-second silent duration by default. Export uses the provider-independent accepted recordings; Qwen is not part of the video renderer.
@@ -89,13 +95,13 @@ Native 10-minute export, six-slide app preview/export, resize and cancellation c
 | Development signed sandbox probe | `/private/tmp/slopslide-sandbox-devsigned-2026-10-09/` |
 | Official reference Python | `/private/tmp/slopslide-qwen-official-venv/` |
 
-The plan, mockup, PoC probe sources and retained evidence are committed locally on **`codex/narration-poc`**. No PR, push or publication has been created. Phase 1 now adds production narration source storage, checked agent tools and the right-sidebar script editor. Phase 2 now integrates stock speech generation and playback. Large model packs, generated helper executables and presenter profiles are excluded from Git; pinned build sources and notices are retained.
+The plan, mockup, PoC probe sources and retained evidence are committed locally on **`codex/narration-poc`**. The branch is published to `the-ulib/slop-slides` as `codex/narration-poc`; upstream `origin` rejected pushing for this account. No PR has been created. Phase 1 now adds production narration source storage, checked agent tools and the right-sidebar script editor. Phase 2 now integrates stock speech generation and playback. Large model packs, generated helper executables and presenter profiles are excluded from Git; pinned build sources and notices are retained.
 
 ## Product concept
 
 Turn a deck into a narrated video using an interchangeable speech provider, a shared slide timeline and a native MP4 encoder. Local Qwen3-TTS 0.6B is the default: once models and deck assets are available locally, synthesis and export require no network and incur no API charges. Optional ElevenLabs/cloud connectors require explicit selection and their own credentials, network access and provider charges; no automatic cloud fallback occurs. Optional script drafting still uses the user's configured agent and its existing costs/data handling.
 
-First local video PoC: English and German; one voice per deck; editable narration for every slide; local preview; 1920×1080 H.264/AAC MP4; static slides at their final visual state. Voice cloning is the next milestone on the same architecture. No promise of real-time synthesis or universal hardware support before measurements.
+First local video PoC: English and German; a deck default voice with per-slide overrides; editable narration for every slide; local preview; 1920×1080 H.264/AAC MP4; static slides at their final visual state. Voice cloning is the next milestone on the same architecture. No promise of real-time synthesis or universal hardware support before measurements.
 
 Mac is the first complete video-export target. Preserve platform-neutral narration and timeline interfaces, then add Windows/Linux video backends. Do not make cloud TTS a dependency or automatically fall back to a paid provider.
 
@@ -120,10 +126,10 @@ Keep the existing three-column editor: slide thumbnails on the left, the slide p
 
 1. Select the **Narration** tab in the right sidebar. It shows the selected slide's script, voice, language, preview control and generation state. If a toolbar shortcut is provided, it opens this same tab.
 2. Choose **Draft narration** for a slide or the whole deck, or write it manually. An optional audience and target duration guide drafting. The script explains the slide rather than reading every visible word. Target duration is an estimate until audio exists.
-3. Choose **Speech provider** above **Presenter**. The default is **Local Qwen · On device**; cloud choices identify remote processing and possible charges. **Speech settings** renders backend-supplied setup requirements: verified pack size/download/import for Qwen or account/credential setup for a cloud connector. Distribution of model resources for the Store build must pass the packaging milestone below.
+3. Choose **Presenter** for this slide. Expand **Voice & timing** to change the **Speech provider**, pace, language, pauses or inherited deck defaults. The default is **Local Qwen · On device**; cloud choices identify remote processing and possible charges. **Speech settings** renders backend-supplied setup requirements: verified pack size/download/import for Qwen or account/credential setup for a cloud connector. Distribution of model resources for the Store build must pass the packaging milestone below.
 4. Select a compatible presenter and language; generate a short preview. Show **Not generated**, **Generating**, **Ready**, **Needs regeneration**, or **Failed** for each slide.
-5. **Generate narration** processes pending slides with progress, cancellation and per-slide retry. Let users keep or regenerate a take. Already accepted takes remain unchanged.
-6. Preview the complete narrated deck with the same timeline that export uses. Silence is explicit: an empty script requires a chosen silent-slide duration or a request to draft narration.
+5. **Generate audio** creates speech for this slide; **Generate another take** explicitly creates a fresh recording. **Recording history** previews and restores older takes, including their original script/settings. Whole-deck generation is an expandable action and reuses matching selected recordings. Failure/cancellation preserves previous accepted takes.
+6. Preview the complete narrated deck with the same timeline that export uses. An empty script uses a 5-second silent duration initially, which the user can adjust.
 7. **Export video** shows total duration and unresolved items, asks for a destination and renders a frozen copy of the deck. Report completion only after the MP4 has finalized successfully.
 
 ### Saved presenters and one-time voice setup
@@ -190,6 +196,7 @@ Keep narration outside `deck.html` in a versioned, human-readable `narration.jso
   narration.json                 scripts, language, voice reference, pauses, accepted takes
   audio/                         immutable generated WAV takes
   .slopslide/speech/takes/        internal take metadata
+  .slopslide/speech/history/      immutable slide-to-recording associations
   .slopslide/speech/jobs/         temporary speech jobs (current implementation)
   .slopslide/narration/jobs/      proposed resumable export manifests
 

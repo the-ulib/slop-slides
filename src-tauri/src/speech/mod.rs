@@ -268,6 +268,7 @@ impl SpeechManager {
         id: String,
         deck_id: String,
         slide: Option<String>,
+        fresh: bool,
     ) -> Result<GenerationResult> {
         let dir = deck::deck_dir(&app, &deck_id)?;
         let doc = narration::load(&dir)?;
@@ -318,7 +319,12 @@ impl SpeechManager {
                 let provider = self.provider(&app, &source.provider_id)?;
                 let descriptor = provider.describe();
                 let key = source.key_for(&descriptor.engine_version, &descriptor.model_revision);
-                let take = if let Some(take) = cache::find(&dir, &key)? {
+                let accepted = doc
+                    .manifest
+                    .slides
+                    .get(slide)
+                    .and_then(|s| s.accepted_take_id.as_deref());
+                let take = if let Some(take) = cache::reusable(&dir, &key, accepted, fresh)? {
                     result.reused += 1;
                     take
                 } else {

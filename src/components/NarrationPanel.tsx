@@ -31,7 +31,7 @@ export function NarrationPanel() {
       <div className="flex-1 overflow-y-auto p-3 text-xs">
         <div className="mb-3 flex items-center justify-between text-muted-foreground">
           <span role="status">{state.saving ? "Saving…" : Object.keys(state.edits).length || state.languageEdit || Object.keys(state.settingsEdits).length ? "Unsaved edits" : manifest ? "Saved locally" : "Loading narration…"}</span>
-          <span>Local narration</span>
+          <span>Narration</span>
         </div>
         {state.error && (
           <div role="alert" className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 leading-relaxed">
@@ -46,11 +46,6 @@ export function NarrationPanel() {
             )}
           </div>
         )}
-        <label className="mb-4 block text-muted-foreground">Deck language
-          <select aria-label="Deck narration language" className={`${field} mt-1 text-foreground`} value={manifest?.defaultLanguage ?? "en"} disabled={!manifest} onChange={(e) => state.setLanguage(e.target.value as NarrationLanguage)}>
-            <option value="en">English</option><option value="de">German</option>
-          </select>
-        </label>
         <div className="mb-2 flex items-center justify-between">
           <span className="font-medium">{slide ? `Slide ${index + 1} of ${deck.slides.length}` : "Select a slide"}</span>
           <div className="flex gap-1">
@@ -60,38 +55,43 @@ export function NarrationPanel() {
         </div>
         {slide?.hidden && <p className="mb-2 text-muted-foreground">Hidden slide · excluded from whole-deck drafting and export.</p>}
         {slide?.id.startsWith("#") && <p className="mb-2 text-amber-600">Waiting for a stable slide ID before saving narration.</p>}
+        <button className="mb-2 text-primary underline disabled:opacity-40" disabled={!manifest || !!state.error || !!state.conflict || running || (scope === "slide" ? !editable : !deck.slides.some((s) => !s.hidden && !s.id.startsWith("#")))} onClick={() => void useApp.getState().draftNarration(scope, audience, minutes)}>{scope === "deck" ? "Draft whole deck" : "Draft narration"}</button>
+        {running && <p className="mb-2 text-muted-foreground">The agent is working. Follow progress in Chat.</p>}
         <label className="block">Narration script
-          <textarea aria-label="Narration script" className={`${field} mt-1 min-h-56 resize-y leading-relaxed`} disabled={!editable} value={script.text} placeholder="Explain this slide in your own words, or draft with the agent below…" maxLength={100000} onChange={(e) => edit({ text: e.target.value, reviewedSlideHash: hash })} />
+          <textarea aria-label="Narration script" className={`${field} mt-1 min-h-36 resize-y leading-relaxed`} disabled={!editable} value={script.text} placeholder="Explain this slide in your own words, or ask the agent to draft it…" maxLength={100000} onChange={(e) => edit({ text: e.target.value, reviewedSlideHash: hash })} />
         </label>
         <div className="mt-2 flex items-center justify-between gap-2 text-muted-foreground">
           <span>{words} words{words > 0 ? ` · ~${Math.ceil(words / 150 * 60)}s estimated speech` : " · no speech"}</span>
           <span>{needsReview ? "Review needed" : words ? "Reviewed" : "No script"}</span>
         </div>
         {needsReview && <button className={`${field} mt-2`} onClick={() => edit({ reviewedSlideHash: hash })}>Mark reviewed</button>}
-        <label className="mt-3 block text-muted-foreground">Slide language
-          <select aria-label="Slide narration language" className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.languageOverride ?? ""} onChange={(e) => edit({ languageOverride: (e.target.value || null) as NarrationLanguage | null })}>
-            <option value="">Use deck language</option><option value="en">English</option><option value="de">German</option>
-          </select>
-        </label>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <label className="text-muted-foreground">Pause before (ms)<input aria-label="Pause before speech" type="number" min={0} max={60000} step={50} className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.leadInMs} onChange={(e) => edit({ leadInMs: Math.min(60000, Math.max(0, Math.round(Number(e.target.value)))) })} /></label>
-          <label className="text-muted-foreground">Pause after (ms)<input aria-label="Pause after speech" type="number" min={0} max={60000} step={50} className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.tailMs} onChange={(e) => edit({ tailMs: Math.min(60000, Math.max(0, Math.round(Number(e.target.value)))) })} /></label>
-        </div>
         {!words && <label className="mt-3 block text-muted-foreground">Silent slide duration (seconds)
           <input aria-label="Silent slide duration" type="number" min={0.1} max={600} step={0.5} placeholder="5 seconds by default" className={`${field} mt-1 text-foreground`} disabled={!editable} value={(script.silentDurationMs ?? DEFAULT_SILENT_DURATION_MS) / 1000} onChange={(e) => edit({ silentDurationMs: e.target.value === "" ? null : Math.min(600000, Math.max(100, Math.round(Number(e.target.value) * 1000))) })} />
         </label>}
-        <SpeechControls deck={deck} selected={selected} manifest={manifest} editable={editable} />
+        <SpeechControls deck={deck} selected={selected} manifest={manifest} editable={editable}>
+          <label className="mt-3 block text-muted-foreground">Slide language
+            <select aria-label="Slide narration language" className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.languageOverride ?? ""} onChange={(e) => edit({ languageOverride: (e.target.value || null) as NarrationLanguage | null })}>
+              <option value="">Use deck language</option><option value="en">English</option><option value="de">German</option>
+            </select>
+          </label>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <label className="text-muted-foreground">Pause before (ms)<input aria-label="Pause before speech" type="number" min={0} max={60000} step={50} className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.leadInMs} onChange={(e) => edit({ leadInMs: Math.min(60000, Math.max(0, Math.round(Number(e.target.value)))) })} /></label>
+            <label className="text-muted-foreground">Pause after (ms)<input aria-label="Pause after speech" type="number" min={0} max={60000} step={50} className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.tailMs} onChange={(e) => edit({ tailMs: Math.min(60000, Math.max(0, Math.round(Number(e.target.value)))) })} /></label>
+          </div>
+          <label className="mt-3 block text-muted-foreground">Deck language
+            <select aria-label="Deck narration language" className={`${field} mt-1 text-foreground`} value={manifest?.defaultLanguage ?? "en"} disabled={!manifest} onChange={(e) => state.setLanguage(e.target.value as NarrationLanguage)}>
+              <option value="en">English</option><option value="de">German</option>
+            </select>
+          </label>
+        </SpeechControls>
         <button className={`${field} mt-4`} disabled={!manifest || !!state.error} onClick={() => void useVideo.getState().open(deck.id)}>Preview narrated deck</button>
-        <p className="mt-1 text-muted-foreground">Slides without narration stay on screen for 5 seconds by default. Adjust their silent duration above.</p>
-        <div className="mt-5 border-t border-border pt-4">
-          <div className="mb-2 font-medium">Draft with your agent</div>
-          <p className="mb-3 leading-relaxed text-muted-foreground">Uses your selected chat model. Review and edit the result before generating speech.</p>
+        <details className="mt-4 text-muted-foreground">
+          <summary className="cursor-pointer">Draft options</summary>
+          <p className="my-2">Uses your selected chat model. Review the script before generating audio.</p>
           <select aria-label="Draft narration scope" className={field} value={scope} onChange={(e) => setScope(e.target.value as "slide" | "deck")}><option value="slide">Selected slide</option><option value="deck">Whole deck · visible slides</option></select>
           <input aria-label="Narration audience" className={`${field} mt-2`} placeholder="Audience (optional)" value={audience} onChange={(e) => setAudience(e.target.value)} />
           <input aria-label="Narration target duration" className={`${field} mt-2`} type="number" min={0.1} max={180} step={0.5} placeholder="Target minutes (optional)" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
-          <button className="mt-3 w-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground disabled:opacity-40" disabled={!manifest || !!state.error || !!state.conflict || running || (scope === "slide" ? !editable : !deck.slides.some((s) => !s.hidden && !s.id.startsWith("#")))} onClick={() => void useApp.getState().draftNarration(scope, audience, minutes)}>Draft narration</button>
-          {running && <p className="mt-2 text-muted-foreground">The agent is working. Follow progress in Chat.</p>}
-        </div>
+        </details>
         {orphans.length > 0 && <details className="mt-5 border-t border-border pt-3">
           <summary className="cursor-pointer text-muted-foreground">Recovered scripts ({orphans.length})</summary>
           <p className="my-2 text-muted-foreground">These slide IDs are no longer in the deck. Restore a slide with the same ID, or copy its script to the selected slide.</p>

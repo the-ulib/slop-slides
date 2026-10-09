@@ -21,7 +21,7 @@ describe("local speech jobs", () => {
     const save = vi.spyOn(useNarration.getState(), "save").mockResolvedValue(true);
     const generate = vi.spyOn(api, "generateSpeech").mockResolvedValue({ generated: 1, reused: 0, superseded: 0 });
     await useSpeech.getState().generate("talk", "intro");
-    expect(save).toHaveBeenCalled(); expect(generate).toHaveBeenCalledWith(expect.any(String), "talk", "intro");
+    expect(save).toHaveBeenCalled(); expect(generate).toHaveBeenCalledWith(expect.any(String), "talk", "intro", false);
     expect(save.mock.invocationCallOrder[0]).toBeLessThan(generate.mock.invocationCallOrder[0]!);
     expect(api.speechTakes).toHaveBeenCalledWith("talk"); expect(useSpeech.getState().job).toBeNull(); save.mockRestore();
   });
@@ -52,4 +52,32 @@ describe("local speech jobs", () => {
     const old = useSpeech.getState().loadTakes("talk"); await useSpeech.getState().loadTakes("next"); pending.resolve({ intro: { id: "old" } as SpeechTake }); await old;
     expect(useSpeech.getState().deckId).toBe("next"); expect(useSpeech.getState().takes).toEqual({});
   });
+});
+
+it("forces a new take only when explicitly requested", async () => {
+  const generate = vi.spyOn(api, "generateSpeech").mockResolvedValue({ generated: 1, reused: 0, superseded: 0 });
+  await useSpeech.getState().generate("talk", "intro", true);
+  expect(generate).toHaveBeenCalledWith(expect.any(String), "talk", "intro", true);
+});
+it("saves edits and uses the latest fingerprint when selecting a recording", async () => {
+  const save = vi.spyOn(useNarration.getState(), "save").mockResolvedValue(true);
+  const select = vi.spyOn(api, "selectSpeechTake").mockResolvedValue(emptyNarration());
+  await useSpeech.getState().selectTake("talk", "intro", "older");
+  expect(select).toHaveBeenCalledWith("talk", "intro", "older", "missing");
+  expect(save.mock.invocationCallOrder[0]).toBeLessThan(select.mock.invocationCallOrder[0]!);
+  expect(api.speechTakes).toHaveBeenCalledWith("talk");
+  save.mockRestore();
+});
+it("keeps current recordings when selecting fails or narration has a conflict", async () => {
+  const take = { id: "current" } as SpeechTake;
+  useSpeech.setState({ takes: { intro: take } });
+  const save = vi.spyOn(useNarration.getState(), "save").mockResolvedValue(false);
+  const select = vi.spyOn(api, "selectSpeechTake").mockClear();
+  await useSpeech.getState().selectTake("talk", "intro", "older");
+  expect(select).not.toHaveBeenCalled();
+  save.mockResolvedValue(true); select.mockRejectedValue(new Error("Narration changed on disk"));
+  await useSpeech.getState().selectTake("talk", "intro", "older");
+  expect(useSpeech.getState().takes.intro).toBe(take);
+  expect(useSpeech.getState().error).toContain("changed on disk");
+  expect(useSpeech.getState().job).toBeNull(); save.mockRestore();
 });

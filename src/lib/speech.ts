@@ -2,6 +2,7 @@ import type { NarrationLanguage, NarrationManifest, SlideNarration } from "./nar
 import { slideSpeechSettings } from "./narration";
 export interface SpeechSource { providerId?: string; text: string; language: NarrationLanguage; presenterId: string; pace: number }
 export interface SpeechTake { id: string; key: string; engineVersion: string; modelRevision: string; source: SpeechSource; samples: number; sampleRate: number; sha256: string }
+export interface SpeechHistoryTake extends SpeechTake { createdAt: number }
 export interface SpeechJob { id: string; kind: string; deckId: string | null; sourceRevision: number | null; stage: string; completed: number; total: number; detail: string }
 export interface SpeechProvider {
   id: string; label: string; contractVersion: number; processing: "local" | "cloud" | "test";

@@ -78,6 +78,8 @@ export function installBrowserMock() {
         case "release_video": return;
         case "speech_status": return { providers: [], job: null };
         case "speech_takes": return {};
+        case "speech_history": return [];
+        case "select_speech_take": throw new Error("Recording selection requires the desktop app.");
         case "load_narration":
           return JSON.parse(localStorage.getItem(`mock-narration-${String(a.id)}`) ?? "null") ?? emptyNarration();
         case "save_narration": {

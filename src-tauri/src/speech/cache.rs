@@ -111,6 +111,136 @@ pub struct Take {
     pub sample_rate: u32,
     pub sha256: String,
 }
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryTake {
+    #[serde(flatten)]
+    pub take: Take,
+    pub created_at: u64,
+}
+// Associations belong to the deck, not the provider. One cached recording can
+// belong to multiple slides; immutable links also retain superseded results.
+pub fn remember(dir: &Path, slide: &str, take: &Take) -> Result<()> {
+    let prefix = format!("{:x}", Sha256::digest(slide.as_bytes()));
+    let path = safe_directory(dir, "history")?.join(format!("{prefix}-{}.json", take.id));
+    if !path.exists() {
+        deck::atomic_write(
+            &path,
+            &serde_json::to_vec(&(slide, &take.id)).expect("history JSON"),
+        )?;
+    }
+    Ok(())
+}
+/// Recover legacy associations from accepted references and deck snapshots.
+/// Never guess ownership from matching words: two slides can share a script.
+pub fn history(dir: &Path, slide: &str) -> Result<Vec<HistoryTake>> {
+    let mut ids = std::collections::BTreeSet::new();
+    let doc = narration::load(dir)?;
+    if let Some(id) = doc
+        .manifest
+        .slides
+        .get(slide)
+        .and_then(|s| s.accepted_take_id.as_ref())
+    {
+        ids.insert(id.clone());
+    }
+    let snapshots = dir.join(deck::INTERNAL_DIR).join("narration-snapshots");
+    if let Ok(entries) = fs::read_dir(snapshots) {
+        for entry in entries.flatten() {
+            if entry.file_type().is_ok_and(|m| m.is_file())
+                && entry.metadata().is_ok_and(|m| m.len() <= 4_000_000)
+            {
+                if let Ok(manifest) = fs::read(entry.path()).and_then(|b| {
+                    serde_json::from_slice::<narration::Manifest>(&b).map_err(std::io::Error::other)
+                }) {
+                    if let Some(id) = manifest
+                        .slides
+                        .get(slide)
+                        .and_then(|s| s.accepted_take_id.as_ref())
+                    {
+                        ids.insert(id.clone());
+                    }
+                }
+            }
+        }
+    }
+    let prefix = format!("{:x}-", Sha256::digest(slide.as_bytes()));
+    let links = safe_directory(dir, "history")?;
+    for entry in fs::read_dir(&links)?.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(&prefix)
+            || !entry.file_type().is_ok_and(|m| m.is_file())
+            || !entry.metadata().is_ok_and(|m| m.len() <= 2048)
+        {
+            continue;
+        }
+        if let Ok((owner, id)) = fs::read(entry.path()).and_then(|b| {
+            serde_json::from_slice::<(String, String)>(&b).map_err(std::io::Error::other)
+        }) {
+            if owner == slide {
+                ids.insert(id);
+            }
+        }
+    }
+    let mut takes = Vec::new();
+    for id in ids {
+        // A damaged or deleted old take must not hide the remaining history.
+        if let Ok(Some(take)) = read(dir, &id) {
+            remember(dir, slide, &take)?;
+            let created_at = fs::metadata(take_path(dir, &id, "json")?)?
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            takes.push(HistoryTake { take, created_at });
+        }
+    }
+    takes.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| b.take.id.cmp(&a.take.id))
+    });
+    Ok(takes)
+}
+/// Selecting a take explicitly restores its source. A fingerprint prevents
+/// overwriting edits from another window or the agent while the picker is open.
+pub fn select(dir: &Path, slide: &str, id: &str, base: &str) -> Result<narration::Document> {
+    let take = history(dir, slide)?
+        .into_iter()
+        .find(|t| t.take.id == id)
+        .ok_or_else(|| Error::msg("This recording is not available for this slide."))?
+        .take;
+    let mut doc = narration::load(dir)?;
+    let script = doc.manifest.slides.entry(slide.into()).or_default();
+    if script.text.trim().replace("\r\n", "\n") != take.source.text {
+        script.reviewed_slide_hash = None;
+    }
+    script.text = take.source.text;
+    script.language_override = Some(take.source.language);
+    script.speech_provider_id_override = Some(take.source.provider_id);
+    script.presenter_name_snapshot_override = Some(take.source.presenter_id.clone());
+    script.presenter_id_override = Some(take.source.presenter_id);
+    script.pace_override = Some(take.source.pace);
+    script.accepted_take_id = Some(take.id);
+    narration::save(dir, doc.manifest, base)
+}
+pub fn reusable(
+    dir: &Path,
+    key: &str,
+    accepted: Option<&str>,
+    fresh: bool,
+) -> Result<Option<Take>> {
+    if fresh {
+        return Ok(None);
+    }
+    if let Some(id) = accepted {
+        if let Ok(Some(take)) = read(dir, id) {
+            if take.key == key {
+                return Ok(Some(take));
+            }
+        }
+    }
+    find(dir, key)
+}
 pub fn safe_directory(dir: &Path, kind: &str) -> Result<PathBuf> {
     safe_directory_parts(dir, &[deck::INTERNAL_DIR, "speech", kind])
 }
@@ -270,8 +400,19 @@ pub fn publish_for(
 }
 /// Accept only if the current speech source still matches; merge unrelated concurrent edits.
 pub fn accept(dir: &Path, slide: &str, take: &Take) -> Result<bool> {
+    remember(dir, slide, take)?;
     for _ in 0..4 {
         let mut doc = narration::load(dir)?;
+        if let Some(id) = doc
+            .manifest
+            .slides
+            .get(slide)
+            .and_then(|s| s.accepted_take_id.as_ref())
+        {
+            if let Ok(Some(previous)) = read(dir, id) {
+                remember(dir, slide, &previous)?;
+            }
+        }
         if Source::from_manifest(&doc.manifest, slide)
             .map(|s| s.key_for(&take.engine_version, &take.model_revision))
             .ok()
@@ -375,6 +516,117 @@ mod tests {
             presenter_id: "preset:ryan".into(),
             pace: 1.1,
         }
+    }
+    #[test]
+    fn history_keeps_variants_isolated_and_restores_source_with_a_fingerprint() {
+        let dir = dir();
+        let mut m = narration::Manifest::default();
+        m.slides.insert(
+            "intro".into(),
+            narration::SlideNarration {
+                text: "Hello".into(),
+                reviewed_slide_hash: Some("review".into()),
+                tail_ms: 1200,
+                ..Default::default()
+            },
+        );
+        m.slides.insert(
+            "other".into(),
+            narration::SlideNarration {
+                text: "Hello".into(),
+                ..Default::default()
+            },
+        );
+        narration::save(&dir, m, "missing").unwrap();
+        let old = publish(&dir, source(), &[1, 2, 3]).unwrap();
+        assert!(accept(&dir, "intro", &old).unwrap());
+        let other = publish(&dir, source(), &[4, 5, 6]).unwrap();
+        assert!(accept(&dir, "other", &other).unwrap());
+        let mut doc = narration::load(&dir).unwrap();
+        doc.manifest.slides.get_mut("intro").unwrap().text = "Changed".into();
+        let doc = narration::save(&dir, doc.manifest, &doc.version).unwrap();
+        let new = publish(
+            &dir,
+            Source {
+                text: "Changed".into(),
+                language: narration::Language::De,
+                ..source()
+            },
+            &[7, 8, 9],
+        )
+        .unwrap();
+        // Superseded language still retains the new take for this slide.
+        assert!(!accept(&dir, "intro", &new).unwrap());
+        let h = history(&dir, "intro").unwrap();
+        assert_eq!(h.len(), 2);
+        assert!(!h.iter().any(|t| t.take.id == other.id));
+        assert!(h.windows(2).all(|w| w[0].created_at >= w[1].created_at));
+        let bytes = fs::read(take_path(&dir, &old.id, "wav").unwrap()).unwrap();
+        assert!(select(&dir, "intro", &old.id, "stale").is_err());
+        assert_eq!(
+            narration::load(&dir).unwrap().manifest.slides["intro"].text,
+            "Changed"
+        );
+        assert!(select(&dir, "intro", &other.id, &doc.version).is_err());
+        let selected = select(&dir, "intro", &old.id, &doc.version).unwrap();
+        let script = &selected.manifest.slides["intro"];
+        assert_eq!(script.text, "Hello");
+        assert_eq!(script.accepted_take_id.as_deref(), Some(old.id.as_str()));
+        assert_eq!(script.tail_ms, 1200);
+        assert!(script.reviewed_slide_hash.is_none());
+        assert_eq!(
+            Source::from_manifest(&selected.manifest, "intro").unwrap(),
+            old.source
+        );
+        assert_eq!(
+            selected.manifest.slides["other"]
+                .accepted_take_id
+                .as_deref(),
+            Some(other.id.as_str())
+        );
+        assert_eq!(
+            fs::read(take_path(&dir, &old.id, "wav").unwrap()).unwrap(),
+            bytes
+        );
+        assert!(reusable(&dir, &old.key, Some(&old.id), true)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            reusable(&dir, &old.key, Some(&old.id), false)
+                .unwrap()
+                .unwrap()
+                .id,
+            old.id
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn legacy_history_recovers_snapshot_references_and_skips_damaged_audio() {
+        let dir = dir();
+        let old = publish(&dir, source(), &[1, 2, 3]).unwrap();
+        let current = publish(&dir, source(), &[4, 5, 6]).unwrap();
+        let mut m = narration::Manifest::default();
+        m.slides.insert(
+            "intro".into(),
+            narration::SlideNarration {
+                text: "Hello".into(),
+                accepted_take_id: Some(old.id.clone()),
+                ..Default::default()
+            },
+        );
+        let snapshots = dir.join(deck::INTERNAL_DIR).join("narration-snapshots");
+        fs::create_dir_all(&snapshots).unwrap();
+        fs::write(snapshots.join("old.json"), serde_json::to_vec(&m).unwrap()).unwrap();
+        m.slides.get_mut("intro").unwrap().accepted_take_id = Some(current.id.clone());
+        narration::save(&dir, m, "missing").unwrap();
+        assert_eq!(history(&dir, "intro").unwrap().len(), 2);
+        fs::remove_dir_all(snapshots).unwrap();
+        assert_eq!(history(&dir, "intro").unwrap().len(), 2);
+        fs::write(take_path(&dir, &old.id, "wav").unwrap(), b"broken").unwrap();
+        let history = history(&dir, "intro").unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].take.id, current.id);
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn legacy_qwen_metadata_keeps_its_exact_identity_without_provider_field() {
