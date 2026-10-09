@@ -1,5 +1,6 @@
 [package]
 name = "slopslide"
+default-run = "slopslide"
 version = "0.1.0"
 description = "Chat-driven slide editor"
 authors = ["Matthias Rieck"]
