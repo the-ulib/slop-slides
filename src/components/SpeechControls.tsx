@@ -38,7 +38,7 @@ export function SpeechControls({ deck, selected, manifest, editable }: { deck: D
       </div> : <>
         <select aria-label="Generate audio scope" className={`${field} mt-3`} value={scope} onChange={(e) => setScope(e.target.value as "slide" | "deck")}><option value="slide">Selected slide</option><option value="deck">Whole deck · visible scripts</option></select>
         <button className="mt-2 w-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground disabled:opacity-40" disabled={busy || !manifest || !!narration.error || (scope === "slide" ? !editable || !script.text.trim() : !deck.slides.some((s) => !s.hidden && manifest.slides[s.id]?.text.trim()))} onClick={() => void speech.generate(deck.id, scope === "slide" ? selected : null)}>{current && scope === "slide" ? "Reuse saved audio" : "Generate audio"}</button>
-        {take && <p className="mt-2 text-muted-foreground">{current ? "Recording ready" : "Previous recording · script or voice settings changed"} · {(take.samples / take.sampleRate).toFixed(1)}s. Play below the slide.</p>}
+        {take && <p className="mt-2 text-muted-foreground">{current ? "Recording ready" : "Previous recording · script or voice settings changed"} · {(take.samples / take.sampleRate).toFixed(1)}s. Play below the slide. Saved in this deck’s audio folder.</p>}
         <details className="mt-3 text-muted-foreground"><summary className="cursor-pointer">Manage voice pack</summary><p className="mt-2">Removing the pack frees {(speech.status.totalBytes / 1e9).toFixed(2)} GB. Saved recordings remain playable.</p><button className="mt-2 underline disabled:opacity-40" disabled={busy} onClick={() => void speech.remove()}>Remove voice pack</button></details>
       </>}
     </>}

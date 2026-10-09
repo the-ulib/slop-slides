@@ -30,7 +30,7 @@ it("offers generation and keeps the current presenter and pace in narration", ()
 it("shows actual duration and identifies old audio after a script edit", () => {
   useSpeech.setState({ takes: { intro: take } }); render(<SpeechPlayback />);
   expect(screen.getByText("10.0s · 1.1× pace")).toBeTruthy();
-  expect(screen.getByLabelText("Narration audio").getAttribute("src")).toContain(".slopslide/speech/takes/recording.wav");
+  expect(screen.getByLabelText("Narration audio").getAttribute("src")).toContain("/audio/recording.wav");
   act(() => useNarration.setState({ edits: { intro: { text: "Changed" } } })); expect(screen.getByText("Previous recording")).toBeTruthy();
   act(() => useApp.setState({ selected: "outro" })); expect(screen.queryByLabelText("Narration audio")).toBeNull();
 });

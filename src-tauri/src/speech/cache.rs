@@ -81,8 +81,11 @@ pub struct Take {
     pub sha256: String,
 }
 pub fn safe_directory(dir: &Path, kind: &str) -> Result<PathBuf> {
+    safe_directory_parts(dir, &[deck::INTERNAL_DIR, "speech", kind])
+}
+fn safe_directory_parts(dir: &Path, parts: &[&str]) -> Result<PathBuf> {
     let mut current = dir.to_path_buf();
-    for part in [deck::INTERNAL_DIR, "speech", kind] {
+    for part in parts {
         current.push(part);
         match fs::symlink_metadata(&current) {
             Ok(m) if !m.is_dir() || m.file_type().is_symlink() => {
@@ -105,16 +108,21 @@ pub fn take_path(dir: &Path, id: &str, extension: &str) -> Result<PathBuf> {
     if uuid.to_string() != id {
         return Err(Error::msg("Invalid recording ID."));
     }
-    let path = deck::resolve_in_deck(
-        dir,
-        &format!("{}/speech/takes/{id}.{extension}", deck::INTERNAL_DIR),
-    )?;
-    for parent in [
-        dir.join(deck::INTERNAL_DIR),
-        dir.join(deck::INTERNAL_DIR).join("speech"),
-        root(dir),
-        path.clone(),
-    ] {
+    let (relative, mut parents) = match extension {
+        "wav" => (format!("audio/{id}.wav"), vec![dir.join("audio")]),
+        "json" => (
+            format!("{}/speech/takes/{id}.json", deck::INTERNAL_DIR),
+            vec![
+                dir.join(deck::INTERNAL_DIR),
+                dir.join(deck::INTERNAL_DIR).join("speech"),
+                root(dir),
+            ],
+        ),
+        _ => return Err(Error::msg("Invalid recording file type.")),
+    };
+    let path = deck::resolve_in_deck(dir, &relative)?;
+    parents.push(path.clone());
+    for parent in parents {
         if fs::symlink_metadata(parent).is_ok_and(|m| m.file_type().is_symlink()) {
             return Err(Error::msg("Speech storage cannot use symbolic links."));
         }
@@ -143,15 +151,26 @@ pub fn read(dir: &Path, id: &str) -> Result<Option<Take>> {
         return Err(Error::msg("Invalid recording metadata."));
     }
     let wav = take_path(dir, id, "wav")?;
-    if !wav.exists() {
+    // Earlier previews hid WAVs beside cache metadata. Expose a verified copy
+    // without changing take IDs, metadata, accepted references or the original.
+    let legacy = path.with_extension("wav");
+    if fs::symlink_metadata(&legacy).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(Error::msg("Speech storage cannot use symbolic links."));
+    }
+    let migrate = !wav.exists() && legacy.is_file();
+    if !wav.exists() && !migrate {
         return Ok(None);
     }
-    let bytes = fs::read(wav)?;
+    let bytes = fs::read(if migrate { &legacy } else { &wav })?;
     let pcm = decode_wav(&bytes)?;
     if pcm.len() != take.samples || format!("{:x}", Sha256::digest(&bytes)) != take.sha256 {
         return Err(Error::msg(
             "Recording integrity check failed. Generate it again.",
         ));
+    }
+    if migrate {
+        safe_directory_parts(dir, &["audio"])?;
+        deck::atomic_write(&wav, &bytes)?;
     }
     Ok(Some(take))
 }
@@ -183,6 +202,7 @@ pub fn publish(dir: &Path, source: Source, pcm: &[i16]) -> Result<Take> {
         ));
     }
     safe_directory(dir, "takes")?;
+    safe_directory_parts(dir, &["audio"])?;
     let id = uuid::Uuid::new_v4().to_string();
     let wav = encode_wav(pcm);
     let take = Take {
@@ -399,6 +419,8 @@ mod tests {
     fn immutable_cache_checks_integrity_and_paths() {
         let dir = dir();
         let take = publish(&dir, source(), &[0, 1, 2]).unwrap();
+        assert!(dir.join("audio").join(format!("{}.wav", take.id)).is_file());
+        assert!(!root(&dir).join(format!("{}.wav", take.id)).exists());
         assert_eq!(find(&dir, &take.key).unwrap().unwrap().id, take.id);
         assert!(take_path(&dir, "../../secret", "wav").is_err());
         fs::write(
@@ -408,6 +430,52 @@ mod tests {
         .unwrap();
         assert!(read(&dir, &take.id).is_err());
         fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn legacy_recordings_become_visible_without_changing_references_or_metadata() {
+        let dir = dir();
+        let mut manifest = narration::Manifest::default();
+        manifest.slides.insert(
+            "intro".into(),
+            narration::SlideNarration {
+                text: "Hello".into(),
+                ..Default::default()
+            },
+        );
+        narration::save(&dir, manifest, "missing").unwrap();
+        let take = publish(&dir, source(), &[1, 2, 3]).unwrap();
+        assert!(accept(&dir, "intro", &take).unwrap());
+        let visible = take_path(&dir, &take.id, "wav").unwrap();
+        let legacy = root(&dir).join(format!("{}.wav", take.id));
+        fs::rename(&visible, &legacy).unwrap();
+        let metadata = fs::read(take_path(&dir, &take.id, "json").unwrap()).unwrap();
+        let manifest = fs::read(dir.join("narration.json")).unwrap();
+        assert_eq!(find(&dir, &take.key).unwrap().unwrap().id, take.id);
+        assert_eq!(fs::read(&visible).unwrap(), fs::read(&legacy).unwrap());
+        assert_eq!(
+            fs::read(take_path(&dir, &take.id, "json").unwrap()).unwrap(),
+            metadata
+        );
+        assert_eq!(fs::read(dir.join("narration.json")).unwrap(), manifest);
+        // A visible user-modified file must not be overwritten by the legacy copy.
+        fs::write(&visible, encode_wav(&[7, 8, 9])).unwrap();
+        assert!(read(&dir, &take.id).is_err());
+        assert_eq!(
+            decode_wav(&fs::read(&visible).unwrap()).unwrap(),
+            vec![7, 8, 9]
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn visible_audio_directory_cannot_redirect_writes_outside_the_deck() {
+        let dir = dir();
+        let outside = self::dir();
+        std::os::unix::fs::symlink(&outside, dir.join("audio")).unwrap();
+        assert!(publish(&dir, source(), &[1, 2, 3]).is_err());
+        assert!(fs::read_dir(&outside).unwrap().next().is_none());
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(outside).unwrap();
     }
     #[test]
     fn accept_merges_unrelated_edits_but_rejects_changed_source() {
