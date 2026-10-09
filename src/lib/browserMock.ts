@@ -72,6 +72,10 @@ export function installBrowserMock() {
           return [];
         case "save_deck_source":
           throw new Error("Saving is not available in the browser preview.");
+        case "prepare_video":
+        case "export_video": throw new Error("Narrated video requires the macOS desktop app.");
+        case "cancel_video":
+        case "release_video": return;
         case "speech_status": return { providers: [], job: null };
         case "speech_takes": return {};
         case "load_narration":

@@ -118,6 +118,10 @@ export interface DeckChanged {
 }
 
 export const api = {
+  prepareVideo: (id: string, jobId: string) => invoke<import("./video").VideoTimeline>("prepare_video", { id, jobId }),
+  exportVideo: (jobId: string, dest: string) => invoke<void>("export_video", { jobId, dest }),
+  cancelVideo: (jobId: string) => invoke<void>("cancel_video", { jobId }),
+  releaseVideo: (jobId: string) => invoke<void>("release_video", { jobId }),
   listDecks: () => invoke<DeckSummary[]>("list_decks"),
   /** With a template, the new deck takes its styles (and names it). */
   createDeck: (title: string, template: string | null = null) => invoke<Deck>("create_deck", { title, template }),

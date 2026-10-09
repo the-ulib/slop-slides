@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-09",
+  "scope": "Phase 3 macOS PoC",
+  "automated": {
+    "frontendPassed": 864,
+    "appRustPassed": 319,
+    "connectorRustPassed": 11,
+    "appRustIgnored": 5,
+    "check": "passed"
+  },
+  "tenMinute": {
+    "wallSeconds": 76.73,
+    "boundaryFrame": 344,
+    "boundarySeconds": 11.466666666666667,
+    "aacSpeechCorrelation": 0.9896791652655401,
+    "leadingSilenceRms": 0.0,
+    "silentSlideRms": 0.0,
+    "sha256": "90c66f3746b13ea7c4d19adc3076748fae4e2ffa6c8c4bf8a204b63ed9dc0f5c",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "aac",
+          "sample_rate": "24000",
+          "channels": 1,
+          "r_frame_rate": "0/0",
+          "duration": "600.000000",
+          "nb_frames": "14065"
+        },
+        {
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "duration": "600.000000",
+          "nb_frames": "18000"
+        }
+      ],
+      "format": {
+        "duration": "600.000000",
+        "size": "3242435"
+      }
+    }
+  },
+  "nativeApp": {
+    "deck": "disposable six-slide knowledge-base copy",
+    "playbackAndSeek": "passed",
+    "externalFontsAndAssetImage": "passed",
+    "resize": "passed",
+    "cancelPreservedExistingMovie": "passed",
+    "cancelRemovedScratch": "passed",
+    "originalDeckChanged": false,
+    "sha256": "17ed75e9171ade3037c313717e0857dba18641b0c8c7e32d8596b94c17336958",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "aac",
+          "sample_rate": "24000",
+          "channels": 1,
+          "r_frame_rate": "0/0",
+          "duration": "58.666667",
+          "nb_frames": "1378"
+        },
+        {
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "r_frame_rate": "30/1",
+          "duration": "58.666667",
+          "nb_frames": "1760"
+        }
+      ],
+      "format": {
+        "duration": "58.666667",
+        "size": "8829307"
+      }
+    },
+    "screenshot": "narration-phase3-native.png",
+    "transport": "explicit play/pause/seek over native HTML audio",
+    "finalRebuildTransportDurationSeekAndAutomaticTransitions": "passed"
+  }
+}

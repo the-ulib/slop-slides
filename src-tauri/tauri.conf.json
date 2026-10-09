@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "dev.slopslide.app",
   "build": {
-    "beforeDevCommand": "pnpm speech:build && pnpm dev",
+    "beforeDevCommand": "pnpm speech:build && pnpm video:build && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm speech:build && pnpm build",
+    "beforeBuildCommand": "pnpm speech:build && pnpm video:build && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -39,7 +39,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "speech-runtime/"
+      "speech-runtime/",
+      "video-runtime/"
     ]
   }
 }

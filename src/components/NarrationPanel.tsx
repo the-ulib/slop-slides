@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useApp } from "../store";
+import { useVideo } from "../videoStore";
 import { useNarration } from "../narrationStore";
 import { SpeechControls } from "./SpeechControls";
 import { editedManifest, emptyScript, slideReviewHash, type NarrationLanguage } from "../lib/narration";
@@ -57,7 +58,7 @@ export function NarrationPanel() {
             <button aria-label="Next narration slide" disabled={index < 0 || index >= deck.slides.length - 1} className="rounded p-1 hover:bg-accent disabled:opacity-30" onClick={() => useApp.getState().selectRelative(1)}><ChevronRight className="size-4" /></button>
           </div>
         </div>
-        {slide?.hidden && <p className="mb-2 text-muted-foreground">Hidden slide · excluded from whole-deck drafting and future export.</p>}
+        {slide?.hidden && <p className="mb-2 text-muted-foreground">Hidden slide · excluded from whole-deck drafting and export.</p>}
         {slide?.id.startsWith("#") && <p className="mb-2 text-amber-600">Waiting for a stable slide ID before saving narration.</p>}
         <label className="block">Narration script
           <textarea aria-label="Narration script" className={`${field} mt-1 min-h-56 resize-y leading-relaxed`} disabled={!editable} value={script.text} placeholder="Explain this slide in your own words, or draft with the agent below…" maxLength={100000} onChange={(e) => edit({ text: e.target.value, reviewedSlideHash: hash })} />
@@ -80,6 +81,8 @@ export function NarrationPanel() {
           <input aria-label="Silent slide duration" type="number" min={0.1} max={600} step={0.5} placeholder="Choose a duration for a silent slide" className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.silentDurationMs === null ? "" : script.silentDurationMs / 1000} onChange={(e) => edit({ silentDurationMs: e.target.value === "" ? null : Math.min(600000, Math.max(100, Math.round(Number(e.target.value) * 1000))) })} />
         </label>}
         <SpeechControls deck={deck} selected={selected} manifest={manifest} editable={editable} />
+        <button className={`${field} mt-4`} disabled={!manifest || !!state.error} onClick={() => void useVideo.getState().open(deck.id)}>Preview narrated deck</button>
+        <p className="mt-1 text-muted-foreground">Visible slides need generated speech or an explicit silent duration.</p>
         <div className="mt-5 border-t border-border pt-4">
           <div className="mb-2 font-medium">Draft with your agent</div>
           <p className="mb-3 leading-relaxed text-muted-foreground">Uses your selected chat model. Review and edit the result before generating speech.</p>

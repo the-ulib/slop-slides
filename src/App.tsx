@@ -6,6 +6,7 @@ import { RightSidebar } from "./components/RightSidebar";
 import { CodeView } from "./components/CodeView";
 import { Home } from "./components/Home";
 import { Presenter } from "./components/Presenter";
+import { NarratedVideo } from "./components/NarratedVideo";
 import { SlideImageExport } from "./components/SlideImageExport";
 import { SlideRail } from "./components/SlideRail";
 import { Stage } from "./components/Stage";
@@ -21,6 +22,7 @@ export function App() {
       {deck ? <Editor /> : <Home />}
       {presenting && <Presenter />}
       <SlideImageExport />
+      <NarratedVideo />
       <ErrorToast />
     </>
   );

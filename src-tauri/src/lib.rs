@@ -14,6 +14,7 @@ mod providers;
 mod review;
 mod speech;
 mod templates;
+mod video;
 mod watcher;
 
 use serde::Serialize;
@@ -217,6 +218,35 @@ async fn generate_speech(
 #[tauri::command]
 fn cancel_speech(manager: State<speech::SpeechManager>, job_id: String) -> Result<()> {
     manager.cancel(&job_id)
+}
+
+#[tauri::command]
+async fn prepare_video(
+    app: AppHandle,
+    manager: State<'_, video::VideoManager>,
+    id: String,
+    job_id: String,
+) -> Result<video::Timeline> {
+    manager.prepare(&app, &id, &job_id).await
+}
+#[tauri::command]
+async fn export_video(
+    app: AppHandle,
+    manager: State<'_, video::VideoManager>,
+    job_id: String,
+    dest: String,
+) -> Result<()> {
+    manager
+        .export(&app, &job_id, std::path::Path::new(&dest))
+        .await
+}
+#[tauri::command]
+fn cancel_video(manager: State<video::VideoManager>, job_id: String) -> Result<()> {
+    manager.cancel(&job_id)
+}
+#[tauri::command]
+fn release_video(manager: State<video::VideoManager>, job_id: String) -> Result<()> {
+    manager.release(&job_id)
 }
 
 #[tauri::command]
@@ -449,6 +479,7 @@ pub fn run() {
         .manage(AgentManager::default())
         .manage(DeckWatcher::default())
         .manage(speech::SpeechManager::default())
+        .manage(video::VideoManager::default())
         .register_uri_scheme_protocol("slop", |ctx, request| {
             protocol::handle(ctx.app_handle(), request)
         })
@@ -466,6 +497,10 @@ pub fn run() {
             remove_speech_pack,
             generate_speech,
             cancel_speech,
+            prepare_video,
+            export_video,
+            cancel_video,
+            release_video,
             rename_deck,
             save_review,
             delete_deck,

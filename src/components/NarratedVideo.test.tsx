@@ -1,0 +1,45 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir: vi.fn() }));
+import { NarratedVideo } from "./NarratedVideo";
+import { useVideo } from "../videoStore";
+import type { VideoTimeline } from "../lib/video";
+const timeline: VideoTimeline = { id: "job", deckId: "talk", sourceRevision: 3, sampleRate: 24000, fps: 30, totalSamples: 48000, totalFrames: 60, slides: ["a", "b"].map((id, i) => ({ id, startSample: i * 24000, endSample: (i + 1) * 24000, startFrame: i * 30, endFrame: (i + 1) * 30, audioStartSample: i * 24000, takeId: null })), warnings: ["Animations flattened."] };
+beforeEach(() => { useVideo.setState({ deckId: "talk", jobId: "job", timeline, busy: false, error: null, output: null }); });
+it("selects the rendered image from native audio time and seeking", () => {
+  render(<NarratedVideo />);
+  expect(screen.getByAltText("Narrated slide 1").getAttribute("src")).toContain("/job/frame-0.png");
+  const audio = screen.getByLabelText("Narrated deck audio");
+  fireEvent.timeUpdate(audio, { target: { currentTime: 1 } });
+  expect(screen.getByAltText("Narrated slide 2").getAttribute("src")).toContain("/job/frame-1.png");
+  expect(screen.getByLabelText("Narrated deck audio")).toBe(audio);
+  expect((audio as HTMLAudioElement).currentTime).toBe(1);
+  expect(screen.getByLabelText("Playback time").textContent).toBe("0:01");
+  fireEvent.seeked(audio, { target: { currentTime: 0.5 } });
+  expect(screen.getByAltText("Narrated slide 1")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Seek narrated deck"), { target: { value: "1.5" } });
+  expect((audio as HTMLAudioElement).currentTime).toBe(1.5);
+  expect(screen.getByAltText("Narrated slide 2")).toBeTruthy();
+  fireEvent.play(audio);
+  expect(screen.getByLabelText("Pause narrated deck")).toBeTruthy();
+  fireEvent.ended(audio, { target: { currentTime: 2 } });
+  expect(screen.getByLabelText("Play narrated deck")).toBeTruthy();
+  expect(screen.getByLabelText("Playback time").textContent).toBe("0:02");
+});
+it("offers cancellation while preparing and disables export while encoding", () => {
+  useVideo.setState({ busy: true, progress: { id: "job", stage: "encoding", completed: 3, total: 60 } });
+  const close = vi.spyOn(useVideo.getState(), "close").mockImplementation(() => {});
+  render(<NarratedVideo />);
+  expect((screen.getByText("Export MP4") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("progressbar").getAttribute("value")).toBe("3");
+  fireEvent.click(screen.getByText("Cancel")); expect(close).toHaveBeenCalled(); close.mockRestore();
+});
+it("shows actionable readiness errors and no incomplete preview", () => {
+  useVideo.setState({ timeline: null, error: "Slide 2: generate narration audio first." });
+  render(<NarratedVideo />);
+  expect(screen.getByRole("alert").textContent).toContain("Slide 2");
+  expect(screen.queryByLabelText("Narrated deck audio")).toBeNull();
+});

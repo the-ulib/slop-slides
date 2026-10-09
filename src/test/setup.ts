@@ -29,3 +29,7 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 };
+
+// Playback preview follows the native audio clock once per paint.
+globalThis.requestAnimationFrame ??= (callback) => setTimeout(() => callback(performance.now()), 16) as unknown as number;
+globalThis.cancelAnimationFrame ??= (id) => clearTimeout(id);

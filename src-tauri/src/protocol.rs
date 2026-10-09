@@ -16,7 +16,7 @@ use std::path::Path;
 
 use percent_encoding::percent_decode_str;
 use tauri::http::{header, Request, Response, StatusCode};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::deck;
 use crate::templates;
@@ -111,6 +111,16 @@ fn audio_response(body: Vec<u8>, range: Option<&str>) -> Response<Cow<'static, [
 
 fn serve(app: &AppHandle, raw_path: &str) -> Result<(&'static str, Vec<u8>), StatusCode> {
     let (deck_id, rel) = split_path(raw_path)?;
+    if deck_id == ".video" {
+        let (job, name) = rel.split_once('/').ok_or(StatusCode::NOT_FOUND)?;
+        let path = app
+            .state::<crate::video::VideoManager>()
+            .file(job, name)
+            .ok_or(StatusCode::NOT_FOUND)?;
+        return std::fs::read(path)
+            .map(|bytes| (deck::mime_for(name), bytes))
+            .map_err(|_| StatusCode::NOT_FOUND);
+    }
     if deck_id == TEMPLATE_PREFIX {
         let (template, rel) = rel.split_once('/').ok_or(StatusCode::NOT_FOUND)?;
         let root = templates::user_root(app).map_err(|_| StatusCode::NOT_FOUND)?;

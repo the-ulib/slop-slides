@@ -14,6 +14,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir: (...args: unknown[]) => revealItemInDir(...args) }));
 
+import { useVideo } from "../videoStore";
 import { useApp } from "../store";
 import { DECK_HTML, deckFor } from "../test/fixtures";
 import { TopBar } from "./TopBar";
@@ -198,6 +199,7 @@ describe("toolbar actions", () => {
     expect(exportButton().getAttribute("aria-expanded")).toBe("true");
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "HTML fileOne self-contained file to share",
+      "Narrated MP41080p video with saved narration",
       "PNG imagesOne image per slide, in a new folder",
     ]);
     fireEvent.keyDown(window, { key: "Escape" });
@@ -205,6 +207,13 @@ describe("toolbar actions", () => {
     fireEvent.click(exportButton());
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("prepares a narrated video from the export menu", async () => {
+    const start = vi.spyOn(useVideo.getState(), "open").mockResolvedValue();
+    render(<TopBar />); fireEvent.click(exportButton());
+    fireEvent.click(screen.getByRole("menuitem", { name: /Narrated MP4/ }));
+    expect(start).toHaveBeenCalledWith("talk", true); start.mockRestore();
   });
 
   it("exports PNGs into a new folder named after the deck", async () => {

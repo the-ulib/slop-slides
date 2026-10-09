@@ -1,12 +1,12 @@
 # Narration and presentation video export
 
-Proposal — 8 October 2026; PoC, Phase 1 and native Phase 2 acceptance completed 9 October 2026. Provider architecture revised 9 October 2026. See the [feasibility report](narration-feasibility.md).
+Proposal — 8 October 2026; PoC, Phase 1 and native Phase 2 acceptance completed 9 October 2026. Provider architecture revised and native Phase 3 PoC acceptance completed 9 October 2026. See the [feasibility report](narration-feasibility.md).
 
 **Decision:** use exchangeable backend speech providers, with the native C Qwen3-TTS 0.6B CPU candidate as the local default, BF16 with Kleidi packing disabled. Extract its engine/model/pace handling into a reusable connector; expose an optional separate MCP wrapper for other applications. ElevenLabs and future connectors use the same provider contract. See the [provider architecture and implementation steps](speech-provider-architecture.md). Local stock English/German speech, reusable human-reference presenters, resident model reuse/cancellation, signed sandbox CPU inference and a native one-slide MP4 have working evidence. Engine peak memory was approximately 3.0–3.1 GiB on the tested M4 Pro/48 GiB Mac. This is sufficient for the PoC; minimum hardware, full-app behavior and App Store eligibility remain unverified.
 
 ## Current status and session handoff
 
-Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phase 2 is implemented and passed native preview acceptance; broader installation/device checks remain pending. Phase 2b.1–2b.3 is implemented with unit/standalone model checks and native playback/restart/legacy reuse acceptance passed. Phase 2b.4 ElevenLabs and Phase 2c MCP remain planned. Phases 3–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
+Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phase 2 is implemented and passed native preview acceptance; broader installation/device checks remain pending. Phase 2b.1–2b.3 is implemented with unit/standalone model checks and native playback/restart/legacy reuse acceptance passed. Phase 2b.4 ElevenLabs and Phase 2c MCP remain planned. Phase 3 is implemented with a native 10-minute export and app preview/export/cancellation acceptance passed; extended device/Store qualification remains pending. Phases 4–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
 
 ### Completed PoC evidence
 
@@ -54,16 +54,24 @@ See [implementation details and retained smoke results](implementation/narration
 | --- | --- |
 | Clean network installation, broader stock corpus/seeds, total app memory | Phases 2/5 |
 | Cloud adapter and independent MCP consumer | Phases 2b.4/2c |
-| Full-deck assets/timing, long export, cancellation/disk failures | Phase 3 |
+| Unusual assets/generated media, actual full-volume disk behavior, forced-quit recovery | Phases 3/5 (extended qualification) |
 | User's own voice, broader clone likeness/pronunciation, recording/import/default presenter UX | Phase 4 |
 | Baseline-device support claims, cold/clean-machine installation, integrated Store sandbox/file permissions, distribution signing and final notices | Phases 2/5, before advertising support/distribution |
 | Native Windows/Linux inference and encoding | Phase 5 |
 
 An 8 GiB Mac was not tested. No full-product quality or Store promise follows from this PoC. Recommend setup recording in the primary narration language and preview every intended language; accent removal is not guaranteed.
 
+### Phase 3 implementation and handoff
+
+Narration now offers **Preview narrated deck**, with play/pause/seek and synchronized frozen slide images. **Export → Narrated MP4** produces static 1080p/30 fps H.264/AAC video through the bundled macOS helper, with progress and cancellation. Each visible slide needs current accepted speech or an explicit silent duration. Export uses the provider-independent accepted recordings; Qwen is not part of the video renderer.
+
+Native 10-minute export, six-slide app preview/export, resize and cancellation checks passed. See the [Phase 3 handoff and limits](implementation/narration-phase3.md) and [verification evidence](implementation/narration-phase3-smoke.json).
+
+![Actual native narrated-deck preview](implementation/narration-phase3-native.png)
+
 ### Resume here in another session
 
-1. Read `CLAUDE.md`, this plan and the reproduction README. **The next feature is Phase 3:** shared timeline, complete narrated preview and native MP4 export. First read the [Phase 2b handoff](implementation/narration-phase2b.md) for the passed native playback/restart/cache migration checks. The provider contract, reusable Qwen connector and generic UI are implemented; follow the [provider architecture](speech-provider-architecture.md) for later cloud/MCP steps. Read [Phase 2 implementation notes](implementation/narration-phase2.md) for the verified setup and playback flow. Keep the outstanding clean-install/device checks before support and distribution claims. Keep local Qwen as the default, explicit opt-in cloud use without paid fallback, right-sidebar layout and saved-presenter semantics. Qwen and an opt-in development fixture use the provider abstraction; ElevenLabs and MCP are not implemented.
+1. Read `CLAUDE.md`, this plan and the reproduction README. **The next feature is Phase 4:** reusable personal presenters and the one-time voice setup wizard. Read the [Phase 3 handoff](implementation/narration-phase3.md) for the verified narrated preview and native MP4 flow. Also read the [Phase 2b handoff](implementation/narration-phase2b.md) for the passed native playback/restart/cache migration checks. The provider contract, reusable Qwen connector and generic UI are implemented; follow the [provider architecture](speech-provider-architecture.md) for later cloud/MCP steps. Read [Phase 2 implementation notes](implementation/narration-phase2.md) for the verified setup and playback flow. Keep the outstanding clean-install/device checks before support and distribution claims. Keep local Qwen as the default, explicit opt-in cloud use without paid fallback, right-sidebar layout and saved-presenter semantics. Qwen and an opt-in development fixture use the provider abstraction; ElevenLabs and MCP are not implemented.
 2. Use the pinned C/BF16/no-Kleidi configuration as the prototype starting point. The official Python environment and FFmpeg auditions are development tools, not end-user dependencies.
 3. Reuse scratch resources if they still exist and match hashes; `/private/tmp` may be cleared. Rebuild/download from pinned instructions if absent.
 
@@ -262,7 +270,7 @@ Whole-app Store readiness remains a separate dependency: the current externally 
 | 2 — Local speech | **Implemented; native preview acceptance passed** | Pack management, worker, stock voices, preview, cache and jobs | Works offline after installation; only changed narration regenerates; interrupted downloads recover; cancel/crash preserves accepted takes and frees worker resources. |
 | 2b — Exchangeable providers | **2b.1–2b.3 implemented/checked; native playback/reuse passed. 2b.4 planned** | Contract/migration, reusable Qwen connector, capability-driven UI, fixture-provider proof; ElevenLabs API adapter follows | Legacy takes/cache survive; standalone Qwen consumer works without Tauri; an alternate provider works through the same UI/artifact pipeline. Cloud support requires mocked errors and an authorized live smoke. |
 | 2c — Separate MCP package | **Planned; can follow video PoC** | Tools/job/resource wrapper using the same connector | Actual independent MCP client discovers voices, retrieves audio and cancels/cleans up without SlopSlide. No chat roundtrip is required for app generation. |
-| 3 — Complete video | **Not started** | Frozen render job, timeline, whole-deck preview and Mac MP4 | 10-minute deck exports at 1080p with correct order, no missing assets, no clipped endings and ≤1-frame boundary error. Resize, cancel, disk-full and simultaneous editing tests pass. |
+| 3 — Complete video | **Implemented; native PoC acceptance passed** | Frozen render job, timeline, whole-deck preview and Mac MP4 | Native 10-minute export: 1080p/30 fps, exact frame count/duration and verified speech/boundary. Six-slide app preview/export/seek/cancel and resize passed with real fonts/assets. Frozen-source edits and injected ENOSPC are tested; actual disk-full, unusual content and device/Store checks remain extended qualification. |
 | 4 — Saved presenters | **Not started** | Base pack, one-time import/record wizard, Presenter picker and Manage presenters | Saved voices survive restart and work across decks without recording again. Default applies only to new decks; each existing deck retains its choice. Renaming preserves audio; replacing references invalidates affected takes. Clone remains recognizable across a full English/German test deck; Qwen references stay local and cloud uploads require an explicit choice; deletion and missing-profile recovery preserve existing audio. |
 | 5 — Distribution | **Not started** | Signed installers, Store packaging work and additional video backends | Clean-machine install and offline generation pass on each advertised platform; licences/notices/resources are pinned; sandbox, privacy and filesystem checks pass. |
 

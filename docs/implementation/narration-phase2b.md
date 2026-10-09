@@ -24,7 +24,7 @@ The previous attempt stalled on both native library enumeration and a separate s
 ## Continue here
 
 1. Read the [connector README](../../src-tauri/speech-connector/README.md). Native playback, seek, restart and legacy reuse are verified above. The debug fixture is opt-in with `SLOPSLIDE_SPEECH_FIXTURE=1`; use a disposable deck and remember it generates a tone, not speech.
-2. Next feature: Phase 3's shared timeline and narrated video export, using accepted normalized takes. It should not depend on Qwen model/voice internals.
+2. [Phase 3's shared timeline and narrated video export](narration-phase3.md) is implemented and passed native PoC acceptance. Next feature: Phase 4's saved presenters; keep using the connector contract.
 3. For ElevenLabs, implement another `SpeechProvider`, request/normalize a qualified output format and add backend credentials/cloud consent and mock error tests before a separately authorized paid smoke. For MCP, wrap the same connector task/artifact API; do not relabel the current private worker/CLI as MCP.
 
 The package currently returns completed WAV artifacts, not streaming speech. Rich model options, cloning/profile revisions, MP3/high-rate decoding, cloud account setup/error categories and MCP polling/resources remain their respective later milestones; no generic plugin marketplace or runtime executable downloads were added.

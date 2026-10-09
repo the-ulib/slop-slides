@@ -12,7 +12,8 @@
     "app:build": "tauri build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "speech:build": "python3 scripts/build-speech.py"
+    "speech:build": "python3 scripts/build-speech.py",
+    "video:build": "python3 scripts/build-video.py"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

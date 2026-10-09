@@ -7,3 +7,6 @@ src-tauri/gen/schemas
 
 src-tauri/speech-runtime/*
 !src-tauri/speech-runtime/README.txt
+
+src-tauri/video-runtime/*
+!src-tauri/video-runtime/README.txt

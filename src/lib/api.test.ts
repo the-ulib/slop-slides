@@ -12,6 +12,10 @@ beforeEach(() => {
 
 // Command names and argument keys must match the #[tauri::command]s in src-tauri/src/lib.rs.
 const CASES = [
+  ["prepareVideo", () => api.prepareVideo("talk", "job"), "prepare_video", { id: "talk", jobId: "job" }],
+  ["exportVideo", () => api.exportVideo("job", "/tmp/talk.mp4"), "export_video", { jobId: "job", dest: "/tmp/talk.mp4" }],
+  ["cancelVideo", () => api.cancelVideo("job"), "cancel_video", { jobId: "job" }],
+  ["releaseVideo", () => api.releaseVideo("job"), "release_video", { jobId: "job" }],
   ["speechStatus", () => api.speechStatus(), "speech_status", undefined],
   ["speechTakes", () => api.speechTakes("talk"), "speech_takes", { id: "talk" }],
   ["installSpeechPack", () => api.installSpeechPack("job", null, "qwen-local"), "install_speech_pack", { jobId: "job", source: null, providerId: "qwen-local" }],

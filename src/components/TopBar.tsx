@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useVideo } from "../videoStore";
 import { api, errorMessage } from "../lib/api";
 import { cn, isMac } from "../lib/utils";
 import { lintFixPrompt, useApp, type StageView } from "../store";
@@ -119,6 +120,7 @@ export function TopBar() {
         disabled={deck.slides.length === 0}
         onHtml={() => void exportDeck()}
         onImages={() => void exportImages()}
+        onVideo={() => void useVideo.getState().open(deck.id, true)}
       />
       <button
         type="button"
@@ -154,7 +156,7 @@ function ChatToggle() {
 }
 
 /** The Export button and its choices: one shareable HTML file, or a PNG per slide. */
-function ExportMenu(props: { disabled: boolean; onHtml: () => void; onImages: () => void }) {
+function ExportMenu(props: { disabled: boolean; onHtml: () => void; onImages: () => void; onVideo: () => void }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -199,6 +201,7 @@ function ExportMenu(props: { disabled: boolean; onHtml: () => void; onImages: ()
           className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border bg-card p-1 shadow-lg"
         >
           <ExportItem icon={FileCode2} label="HTML file" hint="One self-contained file to share" onClick={choose(props.onHtml)} />
+          <ExportItem icon={Presentation} label="Narrated MP4" hint="1080p video with saved narration" onClick={choose(props.onVideo)} />
           <ExportItem icon={Images} label="PNG images" hint="One image per slide, in a new folder" onClick={choose(props.onImages)} />
         </div>
       )}
