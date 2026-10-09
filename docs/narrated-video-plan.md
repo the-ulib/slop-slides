@@ -1,12 +1,12 @@
-# Local narration and presentation video export
+# Narration and presentation video export
 
-Proposal — 8 October 2026; PoC and Phase 1 completed 9 October 2026. See the [feasibility report](narration-feasibility.md).
+Proposal — 8 October 2026; PoC, Phase 1 and native Phase 2 acceptance completed 9 October 2026. Provider architecture revised 9 October 2026. See the [feasibility report](narration-feasibility.md).
 
-**Decision:** proceed to implementation with the native C Qwen3-TTS 0.6B CPU candidate, BF16 with Kleidi packing disabled. Local stock English/German speech, reusable human-reference presenters, resident model reuse/cancellation, signed sandbox CPU inference and a native one-slide MP4 have working evidence. Engine peak memory was approximately 3.0–3.1 GiB on the tested M4 Pro/48 GiB Mac. This is sufficient for the PoC; minimum hardware, full-app behavior and App Store eligibility remain unverified.
+**Decision:** use exchangeable backend speech providers, with the native C Qwen3-TTS 0.6B CPU candidate as the local default, BF16 with Kleidi packing disabled. Extract its engine/model/pace handling into a reusable connector; expose an optional separate MCP wrapper for other applications. ElevenLabs and future connectors use the same provider contract. See the [provider architecture and implementation steps](speech-provider-architecture.md). Local stock English/German speech, reusable human-reference presenters, resident model reuse/cancellation, signed sandbox CPU inference and a native one-slide MP4 have working evidence. Engine peak memory was approximately 3.0–3.1 GiB on the tested M4 Pro/48 GiB Mac. This is sufficient for the PoC; minimum hardware, full-app behavior and App Store eligibility remain unverified.
 
 ## Current status and session handoff
 
-Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phase 2 is implemented and passed native preview acceptance; broader installation/device checks remain pending. Phases 3–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
+Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phase 2 is implemented and passed native preview acceptance; broader installation/device checks remain pending. The new Phase 2b provider refactor and Phase 2c MCP package are planned, not implemented. Phases 3–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
 
 ### Completed PoC evidence
 
@@ -52,7 +52,8 @@ See [implementation details and retained smoke results](implementation/narration
 
 | Check still unproven | Where it belongs |
 | --- | --- |
-| Native UI playback/seek/reopen, clean network installation, broader stock corpus/seeds, total app memory | Phase 2 |
+| Clean network installation, broader stock corpus/seeds, total app memory | Phases 2/5 |
+| Provider extraction, migration, interchangeable UI and independent MCP consumer | Phases 2b/2c |
 | Full-deck assets/timing, long export, cancellation/disk failures | Phase 3 |
 | User's own voice, broader clone likeness/pronunciation, recording/import/default presenter UX | Phase 4 |
 | Baseline-device support claims, cold/clean-machine installation, integrated Store sandbox/file permissions, distribution signing and final notices | Phases 2/5, before advertising support/distribution |
@@ -62,7 +63,7 @@ An 8 GiB Mac was not tested. No full-product quality or Store promise follows fr
 
 ### Resume here in another session
 
-1. Read `CLAUDE.md`, this plan and the reproduction README. **The next feature is Phase 3:** shared timeline, complete narrated preview and native MP4 export. Read [Phase 2 implementation notes](implementation/narration-phase2.md) for the verified setup and playback flow. Keep the outstanding clean-install/device checks before support and distribution claims. Keep local/no-paid-fallback, right-sidebar layout and saved-presenter semantics.
+1. Read `CLAUDE.md`, this plan and the reproduction README. **The next work is Phase 2b.1–2b.3:** provider contract/migration, reusable Qwen connector and thin capability-driven UI. Follow the [provider architecture](speech-provider-architecture.md), then Phase 3’s shared timeline, complete narrated preview and native MP4 export. Read [Phase 2 implementation notes](implementation/narration-phase2.md) for the verified setup and playback flow. Keep the outstanding clean-install/device checks before support and distribution claims. Keep local Qwen as the default, explicit opt-in cloud use without paid fallback, right-sidebar layout and saved-presenter semantics. The current UI and backend are still Qwen-specific; the provider abstraction is new work.
 2. Use the pinned C/BF16/no-Kleidi configuration as the prototype starting point. The official Python environment and FFmpeg auditions are development tools, not end-user dependencies.
 3. Reuse scratch resources if they still exist and match hashes; `/private/tmp` may be cleared. Rebuild/download from pinned instructions if absent.
 
@@ -80,9 +81,9 @@ The plan, mockup, PoC probe sources and retained evidence are committed locally 
 
 ## Product concept
 
-Turn a deck into a narrated video entirely on the user's computer. Qwen3-TTS 0.6B generates speech, a timeline connects narration to slides, and a native encoder produces an MP4. Once the required models and deck assets are available locally, synthesis and export require no network and incur no API charges. Optional script drafting still uses the user's configured agent and its existing costs/data handling.
+Turn a deck into a narrated video using an interchangeable speech provider, a shared slide timeline and a native MP4 encoder. Local Qwen3-TTS 0.6B is the default: once models and deck assets are available locally, synthesis and export require no network and incur no API charges. Optional ElevenLabs/cloud connectors require explicit selection and their own credentials, network access and provider charges; no automatic cloud fallback occurs. Optional script drafting still uses the user's configured agent and its existing costs/data handling.
 
-First release: English and German; one voice per deck; editable narration for every slide; local preview; 1920×1080 H.264/AAC MP4; static slides at their final visual state. Voice cloning is the next milestone on the same architecture. No promise of real-time synthesis or universal hardware support before measurements.
+First local video PoC: English and German; one voice per deck; editable narration for every slide; local preview; 1920×1080 H.264/AAC MP4; static slides at their final visual state. Voice cloning is the next milestone on the same architecture. No promise of real-time synthesis or universal hardware support before measurements.
 
 Mac is the first complete video-export target. Preserve platform-neutral narration and timeline interfaces, then add Windows/Linux video backends. Do not make cloud TTS a dependency or automatically fall back to a paid provider.
 
@@ -99,7 +100,7 @@ Open the [narration experience mockup](mockups/narration-experience.html) in a b
 
 This is a UX prototype: recording/import, speech playback, generation and video export are simulated. It does not generate files or access a microphone. The optional below-slide placement control has been removed from this saved copy.
 
-The mockup illustrates the initial flow and predates the saved-presenter refinement below. Its **Voice / Use my voice…** controls must become **Presenter / Add my voice…**, with presenter management, a default-for-new-decks checkbox and persistent profiles. Those behaviors are specified in the plan but are not implemented in this mockup. The written requirements below take precedence where the prototype differs.
+The mockup illustrates the initial flow and predates the saved-presenter refinement and provider selector. Provider switching/cloud setup are specified in the [provider UX requirements](speech-provider-architecture.md#minimal-frontend-and-presenter-experience), not yet drawn in the mockup. Its **Voice / Use my voice…** controls must become **Presenter / Add my voice…**, with presenter management, a default-for-new-decks checkbox and persistent profiles. Those behaviors are specified in the plan but are not implemented in this mockup. The written requirements below take precedence where the prototype differs.
 
 ### Editor layout and workflow
 
@@ -107,17 +108,19 @@ Keep the existing three-column editor: slide thumbnails on the left, the slide p
 
 1. Select the **Narration** tab in the right sidebar. It shows the selected slide's script, voice, language, preview control and generation state. If a toolbar shortcut is provided, it opens this same tab.
 2. Choose **Draft narration** for a slide or the whole deck, or write it manually. An optional audience and target duration guide drafting. The script explains the slide rather than reading every visible word. Target duration is an estimate until audio exists.
-3. On first use, show the exact speech-pack download size, disk requirement and local processing explanation. Allow cancel/resume and removal in settings. Distribution of model resources for the Store build must pass the packaging milestone below.
-4. Select a preset voice and language; generate a short preview. Show **Not generated**, **Generating**, **Ready**, **Needs regeneration**, or **Failed** for each slide.
+3. Choose **Speech provider** above **Presenter**. The default is **Local Qwen · On device**; cloud choices identify remote processing and possible charges. **Speech settings** renders backend-supplied setup requirements: verified pack size/download/import for Qwen or account/credential setup for a cloud connector. Distribution of model resources for the Store build must pass the packaging milestone below.
+4. Select a compatible presenter and language; generate a short preview. Show **Not generated**, **Generating**, **Ready**, **Needs regeneration**, or **Failed** for each slide.
 5. **Generate narration** processes pending slides with progress, cancellation and per-slide retry. Let users keep or regenerate a take. Already accepted takes remain unchanged.
 6. Preview the complete narrated deck with the same timeline that export uses. Silence is explicit: an empty script requires a chosen silent-slide duration or a request to draft narration.
 7. **Export video** shows total duration and unresolved items, asks for a destination and renders a frozen copy of the deck. Report completion only after the MP4 has finalized successfully.
 
 ### Saved presenters and one-time voice setup
 
-The Narration tab contains a **Presenter** picker listing preset voices and saved personal presenters, for example **Uli · My voice**. Language is a separate choice. **Add my voice…** and **Manage presenters** are available from the picker; users do not repeat voice setup for every deck.
+The Narration tab contains a **Speech provider** selector and a **Presenter** picker listing that provider’s preset voices and saved personal presenters, for example **Uli · My voice**. Language is a separate choice. **Add my voice…** and **Manage presenters** are available from the picker; users do not repeat voice setup for every deck.
 
-The setup flow is **Narration → Presenter → Add my voice…**:
+Show **Add my voice…** only when the selected provider supports cloning. Profiles are provider-specific; switching provider does not convert a local Qwen profile or upload its reference automatically. Cloud setup must explain the upload and obtain the user’s explicit choice.
+
+The local Qwen setup flow is **Narration → Presenter → Add my voice…**:
 
 1. Name the presenter, for example **Uli**.
 2. Record a supplied passage or import a clean recording of one speaker. Suggest 10–20 seconds as a product starting point, subject to model/runtime tests. Allow trimming and confirm permission to create and use the voice.
@@ -125,19 +128,19 @@ The setup flow is **Narration → Presenter → Add my voice…**:
 4. Generate and listen to a test sentence. Offer **Sounds good** or **Try another recording** before accepting the profile.
 5. **Save presenter**, with an optional **Use by default for new presentations** checkbox.
 
-Explain this as saving a reusable voice, not training a model. Qwen conditions synthesis on the saved reference recording and transcript; cache reusable derived conditioning where the selected engine supports it. Keep the original reference and versioned derived data locally so the presenter survives app restarts and can be reused without recording again. Do not upload these resources through the drafting agent or include them in HTML/video exports.
+For local Qwen, explain this as saving a reusable voice, not training a model. Qwen conditions synthesis on the saved reference recording and transcript; cache reusable derived conditioning where the selected engine supports it. Keep the original reference and versioned derived data locally so the presenter survives app restarts and can be reused without recording again. Do not upload these resources through the drafting agent or include them in HTML/video exports.
 
 Each deck remembers its selected presenter. New decks copy the application default presenter at creation; later changes to that default do not change existing decks. Choosing another presenter marks the deck's narration as needing regeneration while retaining previous takes until replacement succeeds. The presenter picker and preview should be usable with preset voices before the cloning milestone ships.
 
-**Manage presenters** supports renaming, previewing, replacing the reference recording, setting the default and deleting a presenter. Renaming does not invalidate audio. Replacing a reference creates a new profile revision; decks using that presenter require regeneration on their next load, with previous takes preserved. Presenter profiles belong to this computer initially; explicit profile export/import or synchronization is deferred.
+**Manage presenters** supports renaming, previewing, replacing the reference recording, setting the default and deleting a presenter. Renaming does not invalidate audio. Replacing a reference creates a new profile revision; decks using that presenter require regeneration on their next load, with previous takes preserved. Local Qwen profiles belong to this computer initially; explicit profile export/import or synchronization is deferred. Cloud profiles belong to the selected provider account and retain that provider binding.
 
-A voice deletion removes the reference and derived profile; explain that existing narration recordings and previously exported videos remain unless separately deleted. Switching computers can preserve rendered audio while requiring voice re-import to regenerate it.
+Deleting a local Qwen voice removes its reference and derived profile; explain that existing narration recordings and previously exported videos remain unless separately deleted. Switching computers can preserve rendered audio while requiring voice re-import to regenerate it.
 
 If a presenter is missing or deleted, identify it by its saved display name and ask the user to choose a replacement before generating new speech. Existing accepted audio remains playable and exportable. Deleting the application default clears that preference; new decks fall back to an available preset or prompt for a presenter, never silently change an existing deck's voice.
 
 Tab switching preserves the chat draft, conversation, narration edits and generation progress. A running agent or speech job continues when its tab is inactive. After drafting narration in Chat, a **Review narration** action opens the Narration tab for the selected slide. Changing slides updates the narration editor after preserving the previous slide's edits. Voice setup and export use dialogs, keeping the main editor layout stable.
 
-## Model and runtime decision
+## Local Qwen model and runtime decision
 
 Use **Qwen3-TTS-12Hz-0.6B-CustomVoice** for stock voices and **Qwen3-TTS-12Hz-0.6B-Base** for cloning. These are distinct checkpoints: Base is not a preset-voice model. Install only the pack the user needs and share compatible tokenizer/codec resources. Load one model at a time. A cloning-first user can use Base without downloading CustomVoice.
 
@@ -153,6 +156,18 @@ Use a bundled, versioned native worker with framed local IPC, no HTTP server, an
 
 Pin the engine revision, model revision, quantization recipe and resource checksums. Audit actual license files and transitive dependencies before adoption; a README license statement is insufficient for release. Downloads are allowlisted model data, never scripts, executable plugins or runtime updates.
 
+## Exchangeable speech architecture
+
+**Planned Phase 2b:** keep provider-specific speech code out of React and deck/export orchestration. The [detailed architecture](speech-provider-architecture.md) defines ownership, contract, migration, MCP behavior and acceptance tests.
+
+- The frontend selects provider/presenter and renders capabilities, setup, progress and playback. Voices, model facts, pace ranges and availability come from the backend.
+- SlopSlide owns scripts, revisions, deck jobs, cache, validated audio import and video timing. It stores all accepted recordings in the deck’s visible `audio/` folder.
+- A versioned backend `SpeechProvider` contract discovers capabilities/voices, synthesizes speech and reports progress/results/cancellation. Qwen, ElevenLabs and explicitly mapped MCP connectors implement it.
+- A reusable Qwen connector owns pinned models, warm worker, segmentation, conditioning and Sonic pacing. It receives text/settings and returns an artifact; it has no slide/deck/Tauri dependency.
+- A separate optional MCP server wraps the same connector for other apps. SlopSlide’s Generate button calls the backend directly without an LLM/chat roundtrip. The existing private worker protocol is not MCP.
+
+Build the contract, Qwen extraction and a fixture-provider interchange proof before Phase 3. Implement the ElevenLabs API adapter and independently usable MCP package as follow-up steps; paid/live cloud testing needs separate credentials and authorization. Do not claim either is supported yet.
+
 ## Data and integration design
 
 Keep narration outside `deck.html` in a versioned, human-readable `narration.json` beside it. Existing HTML presentation/export behavior stays intact. The manifest is source data; generated audio is rebuildable, but useful for portable playback.
@@ -161,15 +176,17 @@ Keep narration outside `deck.html` in a versioned, human-readable `narration.jso
 <deck>/
   deck.html
   narration.json                 scripts, language, voice reference, pauses, accepted takes
-  .slopslide/narration/audio/     immutable generated WAV takes and metadata
-  .slopslide/narration/jobs/      resumable generation/export manifests
+  audio/                         immutable generated WAV takes
+  .slopslide/speech/takes/        internal take metadata
+  .slopslide/speech/jobs/         temporary speech jobs (current implementation)
+  .slopslide/narration/jobs/      proposed resumable export manifests
 
 <application support>/
   speech/models/                 verified model packs shared by all decks
   speech/voices/                 private reference recordings and derived voice data
 ```
 
-Proposed manifest fields: `schemaVersion`, `revision`, `presenterId`, `presenterNameSnapshot`, `defaultLanguage`, and `slides[slideId]` containing `text`, `languageOverride`, `leadInMs`, `tailMs`, `silentDurationMs`, `acceptedTakeId`, and `reviewedSlideHash`. `presenterId` is the deck's explicit choice, distinct from the application preference `defaultPresenterId`. The presenter registry maps stable IDs to preset voices or local reference profiles, recording their display names, revisions and compatible engine/model identifiers. Keep reference audio, transcript and derived conditioning in private application storage. Persist no absolute machine paths or private reference audio in the deck manifest. Take metadata records the source-text hash, presenter ID/profile revision, model/runtime versions, seed, synthesis options, PCM sample rate/count and content checksum.
+Proposed manifest fields: `schemaVersion`, `revision`, `speechProviderId`, `presenterId`, `presenterNameSnapshot`, `defaultLanguage`, and `slides[slideId]` containing `text`, `languageOverride`, `leadInMs`, `tailMs`, `silentDurationMs`, `acceptedTakeId`, and `reviewedSlideHash`. `presenterId` is the deck's explicit choice, distinct from the application preference `defaultPresenterId`. The presenter registry maps stable IDs to provider-namespaced voices/profiles, recording their display names, provider bindings, revisions and compatible model identifiers. Migrate version-1 decks explicitly to `qwen-local`, preserving selected voices, pace, take IDs and files; migrate cache metadata so unchanged local narration remains reusable. Existing audio remains playable/exportable with the provider unavailable. Keep reference audio, transcript and derived conditioning in private application storage. Persist no absolute machine paths or private reference audio in the deck manifest. Take metadata records the source-text hash, presenter ID/profile revision, model/runtime versions, seed, synthesis options, PCM sample rate/count and content checksum.
 
 - Reordering slides changes the timeline only. Hidden slides are excluded by default.
 - Duplicating a slide copies its script and may reuse identical audio. Deletion archives its narration for undo; restore both together.
@@ -185,14 +202,15 @@ Proposed backend modules:
 | Module | Responsibility |
 | --- | --- |
 | `narration.rs` | Manifest, revisions, slide lifecycle and cache metadata |
-| `speech/models.rs` | Pack installation, validation, removal and disk limits |
-| `speech/worker.rs` | Runtime adapter, warm model, progress and cancellation |
+| `speech/providers` (planned) | Versioned contract, capability discovery and local/API/MCP adapters |
+| Reusable Qwen connector (planned extraction) | Pack installation/validation, warm worker, segmentation, profiles and Sonic pacing; no Tauri/deck dependency |
+| Optional `speech-mcp` package (planned) | Protocol/tools/resources over the same connector |
 | `speech/voices.rs` | Presenter registry, application default, reference import/recording, transcripts and versioned private profiles |
 | `video/timeline.rs` | Sample-accurate narration intervals and slide boundaries |
 | `video/render.rs` | Frozen deck resources, render readiness and slide frames |
 | `video/macos.rs` | AVFoundation MP4 writing |
 
-Expose typed Tauri commands through `src/lib/api.ts`: load/save narration, list/install/remove packs, create/delete voice, generate/cancel narration, and start/cancel video export. Events include job ID, deck ID, source revision, stage and completed/total work. Ignore stale completions after edits, cancellation or deck changes. Keep binary audio outside JSON events and serve it through a narrowly scoped local asset mechanism.
+Expose typed Tauri commands for narration load/save, provider discovery/readiness/voices/setup, optional profile creation/deletion, generation/cancellation and video export. Backend adapters own provider-specific payloads and credentials; the UI receives generic DTOs. Events include job ID, deck ID, source revision, stage and completed/total work. Ignore stale completions after edits, cancellation or deck changes. Keep binary audio outside JSON events and serve it through a narrowly scoped local asset mechanism.
 
 Frontend additions: a tabbed container in the existing right sidebar hosting `ChatPanel` and the new `NarrationPanel`, plus `VoiceLibrary`, `SpeechSetup` and `VideoExportDialog`. Integrate the active sidebar tab and narration state into `src/store.ts`; keep tab-independent drafts and jobs outside component-local lifetimes. Retain the existing sidebar resizing/collapse behavior. `TopBar` provides video export and any shortcut that opens the Narration tab. Place compact playback controls/status below the center slide, and reuse existing player/slide components where appropriate. Do not add a bottom editor panel or a sidebar-placement preference.
 
@@ -202,7 +220,7 @@ For cloned presenters, the setup preview must include each intended narration la
 
 Split long scripts at sentence boundaries within the selected engine's tested limits. Use the same reference conditioning for every chunk, track offsets, and join PCM with controlled silence. Avoid cutting words or hiding engine truncation. Flag malformed, empty, non-finite or unexpectedly long outputs; bound retries rather than looping indefinitely. Pronunciation improvements initially come from editable scripts rather than an unsupported SSML interface.
 
-Cache by normalized spoken text, language, voice-profile revision, model checksum, engine version, quantization and synthesis settings/seed. Preserve the chosen WAV take so exports remain stable even when floating-point inference is not bitwise deterministic across devices.
+Cache by normalized spoken text, language, provider/adapter identity, voice-profile revision, model ID/revision or checksum, engine version, quantization, synthesis settings/seed, pace processing and normalization policy. Apply pace once via the selected adapter; never combine native speed and Sonic unintentionally. Preserve best-available cloud provenance without promising immutable provider model versions. Preserve the chosen WAV take so exports remain stable even when floating-point inference is not bitwise deterministic across devices.
 
 Compute durations from decoded sample counts, never word count. Each slide occupies lead-in silence + actual audio + tail silence, or an explicit silent duration. Start with 250 ms lead-in and 500 ms tail defaults, editable by the user. Use an integer/rational timeline, resample to the encoder format once, and derive frame boundaries from cumulative time so rounding does not accumulate across slides. Pad the final frame/audio as required and test the encoded result's synchronization.
 
@@ -228,7 +246,9 @@ Run an early signed sandbox build with model loading, worker launch, Metal/CPU i
 
 For the first Store submission, prefer a reviewed bundled model resource strategy. If on-demand model data is used, validate it against Apple's current resource/download rules, disclose sizes and make all functionality available to review. Do not assume that calling a download “weights” guarantees acceptance. The app must never download executable inference code.
 
-Document local voice processing, retention and deletion. Obtain the speaker's authorization to create/use their clone. Never imply that an open model license grants rights to another person's voice or sample. No audio/text telemetry by default. The user's existing agent can receive narration text for drafting, but should never receive private clone samples.
+Bundle and sign the local connector for the Store build. The optional standalone MCP package is independently distributed; Store functionality must not depend on downloading executable connectors or an external MCP host. Review additional executable connectors separately.
+
+Document local versus cloud speech processing, retention and deletion. Cloud narration sends the selected script to the chosen provider; cloud cloning needs an explicit reference-upload choice. Keep API credentials in OS credential storage, never decks or frontend DTOs. Obtain the speaker's authorization to create/use their clone. Never imply that an open model license grants rights to another person's voice or sample. No audio/text telemetry by default. The user's existing agent can receive narration text for drafting, but should never receive private clone samples.
 
 Whole-app Store readiness remains a separate dependency: the current externally installed agent CLIs and library filesystem access need review/redesign. Completing narration does not certify the rest of slop-slides for submission.
 
@@ -240,11 +260,13 @@ Whole-app Store readiness remains a separate dependency: the current externally 
 | 0b — PoC acceptance | **Complete at PoC scope** | Listening acceptance, resident-model reuse/cancellation, signed CPU sandbox proof and prototype configuration | The narrow PoC questions have evidence. Broader product/device/release checks are explicitly assigned to phases 2–5 above. |
 | 1 — Narration source | **Implemented; checks passed** | Manifest, Chat/Narration tabs in the existing right sidebar, script editing/drafting and lifecycle handling | Old decks load unchanged. Tab switching preserves drafts, edits and running jobs; Review narration opens the correct tab. Chat stays on the right, and only playback controls/status sit below the slide. Reorder/duplicate/delete/undo, external edits, hidden slides and revision conflicts behave correctly. |
 | 2 — Local speech | **Implemented; native preview acceptance passed** | Pack management, worker, stock voices, preview, cache and jobs | Works offline after installation; only changed narration regenerates; interrupted downloads recover; cancel/crash preserves accepted takes and frees worker resources. |
+| 2b — Exchangeable providers | **Planned; 2b.1–2b.3 next** | Contract/migration, reusable Qwen connector, capability-driven UI, fixture-provider proof; ElevenLabs API adapter follows | Legacy takes/cache survive; standalone Qwen consumer works without Tauri; an alternate provider works through the same UI/artifact pipeline. Cloud support requires mocked errors and an authorized live smoke. |
+| 2c — Separate MCP package | **Planned; can follow video PoC** | Tools/job/resource wrapper using the same connector | Actual independent MCP client discovers voices, retrieves audio and cancels/cleans up without SlopSlide. No chat roundtrip is required for app generation. |
 | 3 — Complete video | **Not started** | Frozen render job, timeline, whole-deck preview and Mac MP4 | 10-minute deck exports at 1080p with correct order, no missing assets, no clipped endings and ≤1-frame boundary error. Resize, cancel, disk-full and simultaneous editing tests pass. |
-| 4 — Saved presenters | **Not started** | Base pack, one-time import/record wizard, Presenter picker and Manage presenters | Saved voices survive restart and work across decks without recording again. Default applies only to new decks; each existing deck retains its choice. Renaming preserves audio; replacing references invalidates affected takes. Clone remains recognizable across a full English/German test deck; references stay local; deletion and missing-profile recovery preserve existing audio. |
+| 4 — Saved presenters | **Not started** | Base pack, one-time import/record wizard, Presenter picker and Manage presenters | Saved voices survive restart and work across decks without recording again. Default applies only to new decks; each existing deck retains its choice. Renaming preserves audio; replacing references invalidates affected takes. Clone remains recognizable across a full English/German test deck; Qwen references stay local and cloud uploads require an explicit choice; deletion and missing-profile recovery preserve existing audio. |
 | 5 — Distribution | **Not started** | Signed installers, Store packaging work and additional video backends | Clean-machine install and offline generation pass on each advertised platform; licences/notices/resources are pinned; sandbox, privacy and filesystem checks pass. |
 
-Remaining-effort estimates from the original review: phase 1 4–8, phase 2 8–16, phase 3 8–16, phase 4 6–12, Mac distribution preparation 12–24+. These are rough implementation/test estimates, not deadlines; they exclude external access, Apple review, additional-platform work and any major runtime or whole-app Store redesign. Phase 0 has no remaining PoC work; the estimates for later phases include the deferred product checks and remain rough.
+Remaining-effort estimates from the original review: phase 1 4–8, phase 2 8–16, phase 3 8–16, phase 4 6–12, Mac distribution preparation 12–24+. These predate the provider refactor and exclude the new Phases 2b/2c; re-estimate those after the contract boundary is agreed. These are rough implementation/test estimates, not deadlines; they exclude external access, Apple review, additional-platform work and any major runtime or whole-app Store redesign. Phase 0 has no remaining PoC work; the estimates for later phases include the deferred product checks and remain rough.
 
 Phase 0 must include both stock and cloned speech even though the cloning UI ships later. Otherwise we could choose an engine that makes the bonus feature impractical. Phases 1–3 deliver useful narration without requiring users to record themselves. Phases 4–5 complete the intended cloning/distribution path.
 
@@ -256,10 +278,11 @@ Use unit tests for manifest reconciliation, cache invalidation, cancellation and
 
 ## Deferred scope
 
-Animated HTML/video capture, word-level captions, background music/ducking, multiple speakers per slide, narrated HTML export, cloud providers and 1.7B quality packs. The data/provider interfaces allow these later, but the first end-to-end feature is a reliable locally narrated video.
+Animated HTML/video capture, word-level captions, background music/ducking, multiple speakers per slide, narrated HTML export, additional cloud adapters beyond the planned ElevenLabs adapter, arbitrary MCP server auto-discovery and 1.7B quality packs. The data/provider interfaces allow these later, but the first end-to-end feature is a reliable locally narrated video.
 
 ## Primary references
 
+- [Provider architecture sources: ElevenLabs speech API, hosted MCP and MCP transport](speech-provider-architecture.md#separate-mcp-server)
 - [Official Qwen3-TTS models and model distinctions](https://github.com/QwenLM/Qwen3-TTS)
 - [Qwen 0.6B Base model card and license](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base)
 - [Native C runtime candidate](https://github.com/gabriele-mastrapasqua/qwen3-tts)
