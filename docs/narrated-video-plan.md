@@ -6,7 +6,7 @@ Proposal — 8 October 2026; PoC and Phase 1 completed 9 October 2026. See the [
 
 ## Current status and session handoff
 
-Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phases 2–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
+Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phase 2 is implemented, with native UI acceptance still pending. Phases 3–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
 
 ### Completed PoC evidence
 
@@ -30,16 +30,29 @@ Evidence: [initial review/measurements](narration-feasibility.md), [listening cl
 - [x] Optional selected-slide/visible-deck agent drafting with audience/target minutes. Existing configured provider/model is reused. Review narration returns to the drafted slide. Agent writes use new `read_narration` / `write_narration` MCP tools, validated atomic replacement, file fingerprints and a shared OS filesystem lock (`fs2`); conflicts require rereading/merging.
 - [x] Watcher reloads narration independently of HTML/assets. External conflicts offer **Use file version** or **Keep my edits** (merges edited fields onto the file version). Corrupt/unsupported manifests display an error and are never silently replaced.
 - [x] Reordering retains ID associations; duplicating copies scripts without upgrading unreviewed text to reviewed. Deleted/renamed IDs remain as recoverable entries, with a copy-to-selected-slide action. Restoring the same ID recovers its script. Markup/shared-style changes flag existing scripts for review.
-- [x] Deck snapshots include narration source under matching filenames in `.slopslide/narration-snapshots/`, pruned alongside HTML snapshots. Audio retention belongs to Phase 2, since no audio is generated yet.
+- [x] Deck snapshots include narration source under matching filenames in `.slopslide/narration-snapshots/`, pruned alongside HTML snapshots. Phase 2 retains immutable audio takes separately.
 - [x] `./check.sh`: **831 frontend tests, 295 Rust tests** (4 opt-in live tests ignored), TypeScript/build, Rust formatting and clippy all pass. Browser preview checked at the app's default 1480×920 size: right-side layout, local preview save/reopen, draft preservation and Review narration action. Backend tests cover actual temporary-file persistence, corruption, conflicts, simultaneous writers, duplication, restoration and snapshot pruning.
 
-See [implementation notes](implementation/narration-phase1.md) and [actual UI screenshot](implementation/narration-phase1.jpg). This screenshot is the app's browser preview, using preview-only localStorage for narration; desktop saves use the Rust sidecar commands. Upstream main `cc5a2bb` is merged, including Codex interactive permission handling absent from the initial preview. The rebuilt native preview was opened with the existing deck and verified to offer Codex Ask mode. A real installed-Codex read_narration approval/result smoke passed on a disposable deck; read/write approval routing and draft review are covered by regression tests. A complete live draft/write on a user deck remains to be tried. A native-binary MCP stdio smoke also verified reading, saving and stale-write rejection. Leave Ask selected, approve the tools in Chat when requested, then review the script in Narration. Phase 2 must add speech setup/preview, stock presenter controls, accepted-take/cache handling and job progress; the current editor deliberately offers script editing/drafting only. The earlier UX mockup remains illustrative of later phases.
+See [implementation notes](implementation/narration-phase1.md) and [actual UI screenshot](implementation/narration-phase1.jpg). This screenshot is the app's browser preview, using preview-only localStorage for narration; desktop saves use the Rust sidecar commands. Upstream main `cc5a2bb` is merged, including Codex interactive permission handling absent from the initial preview. The rebuilt native preview was opened with the existing deck and verified to offer Codex Ask mode. A real installed-Codex read_narration approval/result smoke passed on a disposable deck; read/write approval routing and draft review are covered by regression tests. A complete live draft/write on a user deck remains to be tried. A native-binary MCP stdio smoke also verified reading, saving and stale-write rejection. Leave Ask selected, approve the tools in Chat when requested, then review the script in Narration. Phase 2 now implements speech setup/preview, stock presenter controls, accepted-take/cache handling and job progress, as described below. The earlier UX mockup remains illustrative of later phases.
+
+### Phase 2 implementation and handoff
+
+- [x] Bundled pinned macOS CPU helper: BF16/no-Kleidi, four threads, resident model reuse and private versioned stdio. No end-user Python, FFmpeg or paid service. Native Sonic pace processing keeps pitch; default 1.1×.
+- [x] One-time 2,498,383,610-byte CustomVoice pack setup: pinned HTTPS download or existing-directory import, resumable staging, exact size/SHA-256 verification, progress/cancel and removal. Installation and worker use coordinate through an OS file lock.
+- [x] Presenter and pace selectors in the right Narration tab; generation for the selected slide or visible scripts in the deck. English/German, nine stock presets, actual recording duration and audio controls below the slide. Chat stays on the right.
+- [x] Immutable WAV takes with source/settings/engine/model cache keys. Generation flushes edits and accepts audio only if its source still matches. Failure/cancellation preserves earlier accepted recordings. Worker unloads after two idle minutes.
+- [x] Real helper smoke: English 11.76 s, German 10.24 s, paced English 11.05 s. Native DSP pitch/duration self-test passed; hard cancellation produced no incomplete WAV; restart reproduced original English bytes.
+- [x] `./check.sh`: **847 frontend tests, 308 Rust tests** (4 opt-in tests ignored), typecheck/build, rustfmt and clippy pass.
+- [ ] Native app import → generate → play/seek/reopen → reuse acceptance. The rebuilt preview reports `cannot read deck library /Users/uli/Documents/SlopSlide: Interrupted system call (os error 4)`. Independent directory enumeration also stalls. A library retry control and contextual error were added; the cause has not been established. Resolve this before declaring Phase 2 accepted.
+- [ ] Full network download/resume on a clean machine, broader presets/long scripts and total-app memory measurement. Tiny-file installer tests and worker smoke do not establish clean-install support.
+
+See [implementation details and retained smoke results](implementation/narration-phase2.md).
 
 ### Checks carried into implementation
 
 | Check still unproven | Where it belongs |
 | --- | --- |
-| Native pace processing, broader stock corpus/seeds, real worker IPC/lifecycle, total app memory | Phase 2 |
+| Native UI playback/seek/reopen, clean network installation, broader stock corpus/seeds, total app memory | Phase 2 |
 | Full-deck assets/timing, long export, cancellation/disk failures | Phase 3 |
 | User's own voice, broader clone likeness/pronunciation, recording/import/default presenter UX | Phase 4 |
 | Baseline-device support claims, cold/clean-machine installation, integrated Store sandbox/file permissions, distribution signing and final notices | Phases 2/5, before advertising support/distribution |
@@ -49,7 +62,7 @@ An 8 GiB Mac was not tested. No full-product quality or Store promise follows fr
 
 ### Resume here in another session
 
-1. Read `CLAUDE.md`, this plan and the reproduction README. **The next implementation step is Phase 2 (local speech)**, starting with pack installation and a resident worker for stock English/German preview. Keep local/no-paid-fallback, right-sidebar layout and saved-presenter semantics.
+1. Read `CLAUDE.md`, this plan and the reproduction README. **Finish Phase 2 native acceptance first:** resolve the library read issue, import the pinned pack, generate/play/reopen one slide and check cached reuse. Read [Phase 2 implementation notes](implementation/narration-phase2.md). After acceptance, Phase 3 adds the shared timeline, complete narrated preview and native MP4 export. Keep local/no-paid-fallback, right-sidebar layout and saved-presenter semantics.
 2. Use the pinned C/BF16/no-Kleidi configuration as the prototype starting point. The official Python environment and FFmpeg auditions are development tools, not end-user dependencies.
 3. Reuse scratch resources if they still exist and match hashes; `/private/tmp` may be cleared. Rebuild/download from pinned instructions if absent.
 
@@ -63,7 +76,7 @@ An 8 GiB Mac was not tested. No full-product quality or Store promise follows fr
 | Development signed sandbox probe | `/private/tmp/slopslide-sandbox-devsigned-2026-10-09/` |
 | Official reference Python | `/private/tmp/slopslide-qwen-official-venv/` |
 
-The plan, mockup, PoC probe sources and retained evidence are committed locally on **`codex/narration-poc`**. No PR, push or publication has been created. Phase 1 now adds production narration source storage, checked agent tools and the right-sidebar script editor. Speech generation is not yet integrated. Large model packs, third-party executables and presenter profiles remain scratch resources and are excluded from the commit.
+The plan, mockup, PoC probe sources and retained evidence are committed locally on **`codex/narration-poc`**. No PR, push or publication has been created. Phase 1 now adds production narration source storage, checked agent tools and the right-sidebar script editor. Phase 2 now integrates stock speech generation and playback. Large model packs, generated helper executables and presenter profiles are excluded from Git; pinned build sources and notices are retained.
 
 ## Product concept
 
@@ -226,7 +239,7 @@ Whole-app Store readiness remains a separate dependency: the current externally 
 | 0a — Standalone technical spike | **Complete** | Native runtime probes, model-size/memory screen, reusable profile, one-slide MP4 | Working evidence and reproducible sources exist on the tested host. |
 | 0b — PoC acceptance | **Complete at PoC scope** | Listening acceptance, resident-model reuse/cancellation, signed CPU sandbox proof and prototype configuration | The narrow PoC questions have evidence. Broader product/device/release checks are explicitly assigned to phases 2–5 above. |
 | 1 — Narration source | **Implemented; checks passed** | Manifest, Chat/Narration tabs in the existing right sidebar, script editing/drafting and lifecycle handling | Old decks load unchanged. Tab switching preserves drafts, edits and running jobs; Review narration opens the correct tab. Chat stays on the right, and only playback controls/status sit below the slide. Reorder/duplicate/delete/undo, external edits, hidden slides and revision conflicts behave correctly. |
-| 2 — Local speech | **Not started** | Pack management, worker, stock voices, preview, cache and jobs | Works offline after installation; only changed narration regenerates; interrupted downloads recover; cancel/crash preserves accepted takes and frees worker resources. |
+| 2 — Local speech | **Implemented; native UI acceptance pending** | Pack management, worker, stock voices, preview, cache and jobs | Works offline after installation; only changed narration regenerates; interrupted downloads recover; cancel/crash preserves accepted takes and frees worker resources. |
 | 3 — Complete video | **Not started** | Frozen render job, timeline, whole-deck preview and Mac MP4 | 10-minute deck exports at 1080p with correct order, no missing assets, no clipped endings and ≤1-frame boundary error. Resize, cancel, disk-full and simultaneous editing tests pass. |
 | 4 — Saved presenters | **Not started** | Base pack, one-time import/record wizard, Presenter picker and Manage presenters | Saved voices survive restart and work across decks without recording again. Default applies only to new decks; each existing deck retains its choice. Renaming preserves audio; replacing references invalidates affected takes. Clone remains recognizable across a full English/German test deck; references stay local; deletion and missing-profile recovery preserve existing audio. |
 | 5 — Distribution | **Not started** | Signed installers, Store packaging work and additional video backends | Clean-machine install and offline generation pass on each advertised platform; licences/notices/resources are pinned; sandbox, privacy and filesystem checks pass. |

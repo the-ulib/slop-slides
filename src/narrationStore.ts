@@ -1,12 +1,15 @@
 import { create } from "zustand";
 import { api, errorMessage } from "./lib/api";
-import { editedManifest, emptyNarration, type NarrationDocument, type NarrationEdits, type NarrationLanguage, type SlideNarration } from "./lib/narration";
+import { editedManifest, emptyNarration, type NarrationDocument, type NarrationEdits, type NarrationLanguage, type NarrationSettings, type SlideNarration } from "./lib/narration";
 
 interface NarrationState {
   deckId: string | null;
   document: NarrationDocument | null;
   edits: NarrationEdits;
   languageEdit: NarrationLanguage | null;
+  settingsEdits: NarrationSettings;
+  setPresenter: (id: string, name: string) => void;
+  setPace: (pace: number) => void;
   saving: boolean;
   error: string | null;
   conflict: NarrationDocument | null;
@@ -21,19 +24,19 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let queue: Promise<boolean> = Promise.resolve(true);
 let generation = 0;
 let refreshRun = 0;
-const dirty = (s: NarrationState) => Object.keys(s.edits).length > 0 || s.languageEdit !== null;
+const dirty = (s: NarrationState) => Object.keys(s.edits).length > 0 || s.languageEdit !== null || Object.keys(s.settingsEdits).length > 0;
 function schedule() {
   clearTimeout(timer);
   timer = setTimeout(() => void useNarration.getState().save(), 400);
 }
 
 export const useNarration = create<NarrationState>((set, get) => ({
-  deckId: null, document: null, edits: {}, languageEdit: null, saving: false, error: null, conflict: null,
+  deckId: null, document: null, edits: {}, languageEdit: null, settingsEdits: {}, saving: false, error: null, conflict: null,
   load: async (id) => {
     clearTimeout(timer);
     const run = ++generation;
     ++refreshRun;
-    set({ deckId: id, document: null, edits: {}, languageEdit: null, saving: false, error: null, conflict: null });
+    set({ deckId: id, document: null, edits: {}, languageEdit: null, settingsEdits: {}, saving: false, error: null, conflict: null });
     if (!id) return;
     try {
       const document = await api.loadNarration(id);
@@ -75,6 +78,8 @@ export const useNarration = create<NarrationState>((set, get) => ({
     set({ languageEdit });
     if (!get().conflict && !get().error) schedule();
   },
+  setPresenter: (id, name) => { set({ settingsEdits: { ...get().settingsEdits, presenterId: id, presenterNameSnapshot: name } }); if (!get().conflict && !get().error) schedule(); },
+  setPace: (pace) => { if (!Number.isFinite(pace) || pace < 0.9 || pace > 1.25) return; set({ settingsEdits: { ...get().settingsEdits, pace } }); if (!get().conflict && !get().error) schedule(); },
   save: () => {
     clearTimeout(timer);
     const gen = generation;
@@ -83,16 +88,17 @@ export const useNarration = create<NarrationState>((set, get) => ({
       const before = get();
       if (before.conflict) return false;
       if (!dirty(before)) return true;
-      const { deckId, document, edits, languageEdit } = before;
+      const { deckId, document, edits, languageEdit, settingsEdits } = before;
       if (!deckId || !document) return false;
       set({ saving: true });
       try {
-        const next = await api.saveNarration(deckId, editedManifest(document.manifest, edits, languageEdit), document.version);
+        const next = await api.saveNarration(deckId, editedManifest(document.manifest, edits, languageEdit, settingsEdits), document.version);
         if (gen !== generation) return false;
         set((s) => ({
           document: next,
           edits: Object.fromEntries(Object.entries(s.edits).filter(([id, patch]) => patch !== edits[id])),
           languageEdit: s.languageEdit === languageEdit ? null : s.languageEdit,
+          settingsEdits: s.settingsEdits === settingsEdits ? {} : s.settingsEdits,
           saving: false, error: null,
         }));
         // Drain edits made while this request was in flight before allowing a deck switch.
@@ -115,7 +121,7 @@ export const useNarration = create<NarrationState>((set, get) => ({
   resolve: async (keepLocal) => {
     const { conflict } = get();
     if (!conflict) return;
-    set({ document: conflict, conflict: null, error: null, ...(keepLocal ? {} : { edits: {}, languageEdit: null }) });
+    set({ document: conflict, conflict: null, error: null, ...(keepLocal ? {} : { edits: {}, languageEdit: null, settingsEdits: {} }) });
     if (keepLocal) await get().save();
   },
 }));

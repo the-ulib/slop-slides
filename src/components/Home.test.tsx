@@ -78,6 +78,18 @@ describe("Home", () => {
     await waitFor(() => expect(useApp.getState().error).toBe("cannot locate documents folder"));
   });
 
+  it("can retry a failed library read without restarting the app", async () => {
+    const normalInvoke = invoke.getMockImplementation()!;
+    invoke.mockImplementation((command: string, ...args: unknown[]) => command === "list_decks"
+      ? Promise.reject("Interrupted system call") : normalInvoke(command, ...args));
+    render(<Home />);
+    await screen.findByRole("button", { name: "Retry opening library" });
+    invoke.mockImplementation(normalInvoke);
+    fireEvent.click(screen.getByRole("button", { name: "Retry opening library" }));
+    await waitFor(() => expect(cards()).toHaveLength(3));
+    expect(screen.queryByRole("button", { name: "Retry opening library" })).toBeNull();
+  });
+
   it("creates a deck with the typed title", async () => {
     render(<Home />);
     const input = screen.getByPlaceholderText(/Deck title/);

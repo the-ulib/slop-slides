@@ -102,7 +102,8 @@ pub fn library_root(app: &AppHandle) -> Result<PathBuf> {
         .or_else(|_| app.path().home_dir())
         .map_err(|e| Error::msg(format!("cannot locate documents folder: {e}")))?;
     let root = base.join("SlopSlide");
-    fs::create_dir_all(&root)?;
+    fs::create_dir_all(&root)
+        .map_err(|e| Error::msg(format!("cannot open deck library {}: {e}", root.display())))?;
     Ok(root)
 }
 
@@ -168,7 +169,9 @@ fn fallback_title(id: &str) -> String {
 
 pub fn list(root: &Path) -> Result<Vec<DeckSummary>> {
     let mut decks = Vec::new();
-    for entry in fs::read_dir(root)? {
+    for entry in fs::read_dir(root)
+        .map_err(|e| Error::msg(format!("cannot read deck library {}: {e}", root.display())))?
+    {
         let dir = entry?.path();
         let Ok(source) = read_html(&dir) else {
             continue;
@@ -711,6 +714,7 @@ pub fn mime_for(path: &str) -> &'static str {
         "mp4" => "video/mp4",
         "webm" => "video/webm",
         "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
         "woff" => "font/woff",
         "woff2" => "font/woff2",
         "ttf" => "font/ttf",

@@ -20,9 +20,29 @@ beforeEach(async () => {
 afterEach(async () => { await useNarration.getState().load(null); vi.useRealTimers(); });
 const current = () => {
   const s = useNarration.getState();
-  return editedManifest(s.document!.manifest, s.edits, s.languageEdit);
+  return editedManifest(s.document!.manifest, s.edits, s.languageEdit, s.settingsEdits);
 };
 describe("narration persistence", () => {
+  it("saves presenter and pace and restores them when reopening", async () => {
+    useNarration.getState().setPresenter("preset:aiden", "Aiden");
+    useNarration.getState().setPace(1.2);
+    await useNarration.getState().save();
+    await useNarration.getState().load("talk");
+    expect(current().presenterId).toBe("preset:aiden");
+    expect(current().presenterNameSnapshot).toBe("Aiden");
+    expect(current().pace).toBe(1.2);
+    expect(useNarration.getState().settingsEdits).toEqual({});
+  });
+  it("merges a local pace edit with an external presenter change", async () => {
+    useNarration.getState().setPace(1.2);
+    disk = { ...emptyNarration(), version: "external" };
+    disk.manifest.presenterId = "preset:aiden";
+    disk.manifest.presenterNameSnapshot = "Aiden";
+    await expect(useNarration.getState().save()).resolves.toBe(false);
+    await useNarration.getState().resolve(true);
+    expect(disk.manifest.pace).toBe(1.2);
+    expect(disk.manifest.presenterId).toBe("preset:aiden");
+  });
   it("debounces edits by stable ID, preserves other scripts and survives reopening", async () => {
     useNarration.getState().edit("intro", { text: "Hallo", languageOverride: "de" });
     useNarration.getState().edit("outro", { text: "Bye" });

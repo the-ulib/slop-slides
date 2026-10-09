@@ -8,7 +8,7 @@ Run the desktop app with `pnpm app:dev`, open a deck, and choose **Narration** i
 
 For Codex, leave **Codex permissions → Ask for approval** selected. Drafting opens Chat, where you can approve `read_narration` and `write_narration` when requested. This branch includes upstream main `cc5a2bb` and its interactive permission handling; the initial Phase 1 preview was accidentally based on older main `69ef3e4`, which forced the `never` approval policy. Rebuild/restart that older preview before retrying.
 
-**Draft narration** uses the currently selected Chat provider/model, for the selected slide or all visible slides. Audience and target minutes are optional. Chat shows progress; **Review narration** returns to the drafted slide. Speech generation, presenters and video export are later phases.
+**Draft narration** uses the currently selected Chat provider/model, for the selected slide or all visible slides. Audience and target minutes are optional. Chat shows progress; **Review narration** returns to the drafted slide. Stock speech generation and playback are now implemented in [Phase 2](narration-phase2.md). Saved personal presenters and video export remain later phases.
 
 ## Source and writes
 
@@ -38,4 +38,4 @@ The browser preview was visually checked at 1480×920, including save/reopen, ta
 
 ## Next session
 
-Start Phase 2 from the completed Phase 0 engine probes and pinned BF16/no-Kleidi configuration. Read `docs/narration-feasibility.md` and `dev/feasibility/README.md`. Implement pack management and the resident worker, then generate/preview one stock English/German slide through the UI. Use the existing manifest as source; preserve accepted takes on failure and keep actual audio duration separate from estimates. Add progress/cancel/retry and cache invalidation before whole-deck generation. Saved personal presenters remain Phase 4.
+Continue from [Phase 2’s handoff](narration-phase2.md), including its remaining native acceptance check. Saved personal presenters remain Phase 4.

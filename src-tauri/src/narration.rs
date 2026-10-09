@@ -57,7 +57,12 @@ pub struct Manifest {
     pub presenter_name_snapshot: String,
     #[serde(default)]
     pub default_language: Language,
+    #[serde(default = "default_pace")]
+    pub pace: f64,
     pub slides: BTreeMap<String, SlideNarration>,
+}
+fn default_pace() -> f64 {
+    1.1
 }
 fn default_presenter() -> String {
     "preset:ryan".into()
@@ -73,6 +78,7 @@ impl Default for Manifest {
             presenter_id: default_presenter(),
             presenter_name_snapshot: default_presenter_name(),
             default_language: Language::En,
+            pace: default_pace(),
             slides: BTreeMap::new(),
         }
     }
@@ -97,6 +103,9 @@ fn validate(m: &Manifest) -> Result<()> {
         || m.presenter_id.contains(['/', '\\'])
     {
         return Err(Error::msg("Invalid presenter ID."));
+    }
+    if !m.pace.is_finite() || !(0.9..=1.25).contains(&m.pace) {
+        return Err(Error::msg("Speaking pace must be between 0.9 and 1.25."));
     }
     if m.slides.len() > 10_000 {
         return Err(Error::msg("Too many narration entries."));
@@ -207,6 +216,17 @@ pub fn duplicate(dir: &Path, from: &str, to: &str, from_hash: &str, hash: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_scripts_default_pace_and_reject_invalid_settings() {
+        let old =
+            serde_json::json!({"schemaVersion":1,"revision":0,"defaultLanguage":"en","slides":{}});
+        let mut manifest: Manifest = serde_json::from_value(old).unwrap();
+        assert_eq!(manifest.pace, 1.1);
+        for pace in [0.0, 2.0, f64::NAN] {
+            manifest.pace = pace;
+            assert!(validate(&manifest).is_err());
+        }
+    }
     struct Temp(std::path::PathBuf);
     impl Temp {
         fn new() -> Self {

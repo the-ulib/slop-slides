@@ -443,9 +443,9 @@ export const useApp = create<AppState>((set, get) => ({
     if (!deck || running || (scope === "slide" && (!selected || selected.startsWith("#")))) return;
     if (!(await useNarration.getState().save())) { get().setSidebarTab("narration"); return; }
     if (get().deck?.id !== deck.id || get().running) return;
-    const { document, edits, languageEdit } = useNarration.getState();
+    const { document, edits, languageEdit, settingsEdits } = useNarration.getState();
     if (!document || useNarration.getState().deckId !== deck.id || useNarration.getState().error) return;
-    const manifest = editedManifest(document.manifest, edits, languageEdit);
+    const manifest = editedManifest(document.manifest, edits, languageEdit, settingsEdits);
     set({ narrationReviewSlide: scope === "slide" ? selected : deck.slides.find((s) => !s.hidden && !s.id.startsWith("#"))?.id ?? null });
     get().setSidebarTab("chat");
     await get().send(narrationDraftPrompt(deck, selected, scope, manifest.defaultLanguage, audience, minutes), { includeSlide: scope === "slide", attachments: [] });

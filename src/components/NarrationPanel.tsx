@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useApp } from "../store";
 import { useNarration } from "../narrationStore";
+import { SpeechControls } from "./SpeechControls";
 import { editedManifest, emptyScript, slideReviewHash, type NarrationLanguage } from "../lib/narration";
 
 const field = "w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-50";
@@ -14,7 +15,7 @@ export function NarrationPanel() {
   const [audience, setAudience] = useState("");
   const [minutes, setMinutes] = useState("");
   if (!deck) return null;
-  const manifest = state.deckId === deck.id && state.document ? editedManifest(state.document.manifest, state.edits, state.languageEdit) : null;
+  const manifest = state.deckId === deck.id && state.document ? editedManifest(state.document.manifest, state.edits, state.languageEdit, state.settingsEdits) : null;
   const slide = deck.slides.find((s) => s.id === selected);
   const index = deck.slides.findIndex((s) => s.id === selected);
   const script = (selected && manifest?.slides[selected]) || emptyScript();
@@ -28,8 +29,8 @@ export function NarrationPanel() {
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex-1 overflow-y-auto p-3 text-xs">
         <div className="mb-3 flex items-center justify-between text-muted-foreground">
-          <span role="status">{state.saving ? "Saving…" : Object.keys(state.edits).length || state.languageEdit ? "Unsaved edits" : manifest ? "Saved locally" : "Loading narration…"}</span>
-          <span>Scripts · speech comes next</span>
+          <span role="status">{state.saving ? "Saving…" : Object.keys(state.edits).length || state.languageEdit || Object.keys(state.settingsEdits).length ? "Unsaved edits" : manifest ? "Saved locally" : "Loading narration…"}</span>
+          <span>Local narration</span>
         </div>
         {state.error && (
           <div role="alert" className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 leading-relaxed">
@@ -78,6 +79,7 @@ export function NarrationPanel() {
         {!words && <label className="mt-3 block text-muted-foreground">Silent slide duration (seconds)
           <input aria-label="Silent slide duration" type="number" min={0.1} max={600} step={0.5} placeholder="Choose a duration for a silent slide" className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.silentDurationMs === null ? "" : script.silentDurationMs / 1000} onChange={(e) => edit({ silentDurationMs: e.target.value === "" ? null : Math.min(600000, Math.max(100, Math.round(Number(e.target.value) * 1000))) })} />
         </label>}
+        <SpeechControls deck={deck} selected={selected} manifest={manifest} editable={editable} />
         <div className="mt-5 border-t border-border pt-4">
           <div className="mb-2 font-medium">Draft with your agent</div>
           <p className="mb-3 leading-relaxed text-muted-foreground">Uses your selected chat model. Review and edit the result before generating speech.</p>

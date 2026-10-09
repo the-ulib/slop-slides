@@ -16,23 +16,25 @@ export interface NarrationManifest {
   presenterId: string;
   presenterNameSnapshot: string;
   defaultLanguage: NarrationLanguage;
+  pace?: number;
   slides: Record<string, SlideNarration>;
 }
 export interface NarrationDocument { manifest: NarrationManifest; version: string }
 export const emptyNarration = (): NarrationDocument => ({
   version: "missing",
-  manifest: { schemaVersion: 1, revision: 0, presenterId: "preset:ryan", presenterNameSnapshot: "Ryan", defaultLanguage: "en", slides: {} },
+  manifest: { schemaVersion: 1, revision: 0, presenterId: "preset:ryan", presenterNameSnapshot: "Ryan", defaultLanguage: "en", pace: 1.1, slides: {} },
 });
 export const emptyScript = (): SlideNarration => ({ text: "", languageOverride: null, leadInMs: 250, tailMs: 500, silentDurationMs: null, acceptedTakeId: null, reviewedSlideHash: null });
 export function slideReviewHash(deck: Deck, id: string): string | null {
   const slide = deck.slides.find((s) => s.id === id);
   return slide ? `${deck.shellHash}:${slide.hash}` : null;
 }
+export type NarrationSettings = Partial<Pick<NarrationManifest, "presenterId" | "presenterNameSnapshot" | "pace">>;
 export type NarrationEdits = Record<string, Partial<SlideNarration>>;
-export function editedManifest(base: NarrationManifest, edits: NarrationEdits, language: NarrationLanguage | null): NarrationManifest {
+export function editedManifest(base: NarrationManifest, edits: NarrationEdits, language: NarrationLanguage | null, settings: NarrationSettings = {}): NarrationManifest {
   const slides = { ...base.slides };
   for (const [id, patch] of Object.entries(edits)) slides[id] = { ...(slides[id] ?? emptyScript()), ...patch };
-  return { ...base, slides, defaultLanguage: language ?? base.defaultLanguage };
+  return { ...base, ...settings, slides, defaultLanguage: language ?? base.defaultLanguage };
 }
 export function narrationDraftPrompt(deck: Deck, selected: string | null, scope: "slide" | "deck", language: NarrationLanguage, audience: string, minutes: string): string {
   const ids = deck.slides.filter((s) => !s.id.startsWith("#") && (scope === "slide" ? s.id === selected : !s.hidden)).map((s) => s.id);

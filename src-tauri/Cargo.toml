@@ -30,6 +30,8 @@ log = "0.4"
 base64 = "0.23.1"
 png = "0.18"
 fs2 = "0.4"
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 # Slide screenshots for sketches (see src/capture.rs); the same versions wry already uses.
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -40,6 +40,13 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Cow<'stati
         }
     });
     match served {
+        Ok(("audio/wav", body)) => audio_response(
+            body,
+            request
+                .headers()
+                .get(header::RANGE)
+                .and_then(|h| h.to_str().ok()),
+        ),
         Ok((mime, body)) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, mime)
@@ -53,6 +60,53 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Cow<'stati
             .body(Cow::Borrowed(&b""[..]))
             .unwrap(),
     }
+}
+
+fn byte_range(value: &str, length: usize) -> Option<(usize, usize)> {
+    let (start, end) = value.strip_prefix("bytes=")?.split_once('-')?;
+    if length == 0 {
+        return None;
+    }
+    if start.is_empty() {
+        let suffix = end.parse::<usize>().ok()?;
+        return (suffix > 0).then_some((length.saturating_sub(suffix), length - 1));
+    }
+    let start = start.parse::<usize>().ok()?;
+    let end = if end.is_empty() {
+        length - 1
+    } else {
+        end.parse::<usize>().ok()?.min(length - 1)
+    };
+    (start <= end && start < length).then_some((start, end))
+}
+fn audio_response(body: Vec<u8>, range: Option<&str>) -> Response<Cow<'static, [u8]>> {
+    let length = body.len();
+    let (status, bytes, content_range) = match range {
+        None => (StatusCode::OK, body, None),
+        Some(range) => match byte_range(range, length) {
+            Some((start, end)) => (
+                StatusCode::PARTIAL_CONTENT,
+                body[start..=end].to_vec(),
+                Some(format!("bytes {start}-{end}/{length}")),
+            ),
+            None => (
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                Vec::new(),
+                Some(format!("bytes */{length}")),
+            ),
+        },
+    };
+    let mut response = Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "audio/wav")
+        .header(header::CONTENT_LENGTH, bytes.len())
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    if let Some(range) = content_range {
+        response = response.header(header::CONTENT_RANGE, range);
+    }
+    response.body(Cow::Owned(bytes)).expect("audio response")
 }
 
 fn serve(app: &AppHandle, raw_path: &str) -> Result<(&'static str, Vec<u8>), StatusCode> {
@@ -127,6 +181,23 @@ mod tests {
         split_path(raw)
     }
 
+    #[test]
+    fn wav_playback_supports_seeking_and_invalid_ranges() {
+        let response = audio_response(vec![1, 2, 3, 4], Some("bytes=1-2"));
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(&**response.body(), &[2, 3]);
+        assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 1-2/4");
+        assert_eq!(byte_range("bytes=-2", 4), Some((2, 3)));
+        assert_eq!(byte_range("bytes=2-", 4), Some((2, 3)));
+        assert_eq!(byte_range("bytes=0-99", 4), Some((0, 3)));
+        for range in ["bytes=4-", "bytes=2-1", "bytes=0-1,2-3", "bytes=-0", "bad"] {
+            assert!(byte_range(range, 4).is_none());
+        }
+        assert_eq!(
+            audio_response(vec![1], Some("bytes=9-")).status(),
+            StatusCode::RANGE_NOT_SATISFIABLE
+        );
+    }
     #[test]
     fn splits_deck_id_and_path() {
         assert_eq!(

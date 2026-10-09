@@ -1,0 +1,14 @@
+{
+  "english": 11.76,
+  "german": 10.237458333333333,
+  "english-paced": 11.049166666666666,
+  "hard_cancel_seconds": 0.03780766699999916,
+  "retry": 11.76,
+  "wall_seconds": 24.852169167,
+  "wav_sha256": {
+    "german.wav": "47153240b0e142ccf993d41eba1e6b0643936075916eb42331058623de4d4f56",
+    "retry.wav": "d0771e6412bdb48a0332be0e5b5fad473165af94450b5c2b6bb6488495312791",
+    "english.wav": "d0771e6412bdb48a0332be0e5b5fad473165af94450b5c2b6bb6488495312791",
+    "english-paced.wav": "1f93661a14729caf340a49d6927ec4f582b0bf296a5bf508d8454ccc3918b50c"
+  }
+}

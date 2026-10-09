@@ -12,12 +12,22 @@ export function Home() {
   const [decks, setDecks] = useState<DeckSummary[] | null>(null);
   const [title, setTitle] = useState("");
   const [template, setTemplate] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const refresh = () =>
-    api
-      .listDecks()
-      .then(setDecks)
-      .catch((error) => useApp.getState().setError(errorMessage(error)));
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      setDecks(await api.listDecks());
+      setLibraryError(null);
+    } catch (error) {
+      const message = errorMessage(error);
+      setLibraryError(message);
+      useApp.getState().setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     void refresh();
@@ -72,6 +82,15 @@ export function Home() {
               </button>
             </div>
           </form>
+
+          {libraryError && (
+            <div className="flex items-center justify-between gap-4 rounded-lg border p-4 text-sm">
+              <p>Couldn’t open the deck library: {libraryError}</p>
+              <button type="button" disabled={loading} onClick={() => void refresh()} className="shrink-0 rounded-md border px-3 py-1.5 disabled:opacity-50">
+                {loading ? "Opening…" : "Retry opening library"}
+              </button>
+            </div>
+          )}
 
           {decks && decks.length > 0 && (
             <section className="flex flex-col gap-3">

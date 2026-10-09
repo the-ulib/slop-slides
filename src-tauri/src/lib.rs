@@ -12,6 +12,7 @@ mod narration;
 mod protocol;
 mod providers;
 mod review;
+mod speech;
 mod templates;
 mod watcher;
 
@@ -168,6 +169,48 @@ fn save_narration(
 #[tauri::command]
 fn save_review(app: AppHandle, id: String, review: review::Review) -> Result<()> {
     deck::save_review(&deck::deck_dir(&app, &id)?, &review)
+}
+
+#[tauri::command]
+fn speech_status(app: AppHandle, manager: State<speech::SpeechManager>) -> Result<speech::Status> {
+    manager.status(&app)
+}
+#[tauri::command]
+fn speech_takes(
+    app: AppHandle,
+    id: String,
+) -> Result<std::collections::BTreeMap<String, speech::cache::Take>> {
+    speech::takes(&app, &id)
+}
+#[tauri::command]
+async fn install_speech_pack(
+    app: AppHandle,
+    manager: State<'_, speech::SpeechManager>,
+    job_id: String,
+    source: Option<String>,
+) -> Result<()> {
+    manager.install(app, job_id, source).await
+}
+#[tauri::command]
+async fn remove_speech_pack(
+    app: AppHandle,
+    manager: State<'_, speech::SpeechManager>,
+) -> Result<()> {
+    manager.remove(&app).await
+}
+#[tauri::command]
+async fn generate_speech(
+    app: AppHandle,
+    manager: State<'_, speech::SpeechManager>,
+    job_id: String,
+    id: String,
+    slide: Option<String>,
+) -> Result<speech::GenerationResult> {
+    manager.generate(app, job_id, id, slide).await
+}
+#[tauri::command]
+fn cancel_speech(manager: State<speech::SpeechManager>, job_id: String) -> Result<()> {
+    manager.cancel(&job_id)
 }
 
 #[tauri::command]
@@ -399,6 +442,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AgentManager::default())
         .manage(DeckWatcher::default())
+        .manage(speech::SpeechManager::default())
         .register_uri_scheme_protocol("slop", |ctx, request| {
             protocol::handle(ctx.app_handle(), request)
         })
@@ -410,6 +454,12 @@ pub fn run() {
             load_deck,
             load_narration,
             save_narration,
+            speech_status,
+            speech_takes,
+            install_speech_pack,
+            remove_speech_pack,
+            generate_speech,
+            cancel_speech,
             rename_deck,
             save_review,
             delete_deck,

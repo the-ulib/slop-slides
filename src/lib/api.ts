@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { SpeechStatus, SpeechTake, SpeechResult } from "./speech";
 import type { NarrationDocument, NarrationManifest } from "./narration";
 import type { Approval, ApprovalDecision, PermissionMode } from "./permissions";
 import type { Stroke } from "./ink";
@@ -123,6 +124,12 @@ export const api = {
   openDeck: (id: string) => invoke<Deck>("open_deck", { id }),
   closeDeck: () => invoke<void>("close_deck"),
   loadDeck: (id: string) => invoke<Deck>("load_deck", { id }),
+  speechStatus: () => invoke<SpeechStatus>("speech_status"),
+  speechTakes: (id: string) => invoke<Record<string, SpeechTake>>("speech_takes", { id }),
+  installSpeechPack: (jobId: string, source: string | null) => invoke<void>("install_speech_pack", { jobId, source }),
+  removeSpeechPack: () => invoke<void>("remove_speech_pack"),
+  generateSpeech: (jobId: string, id: string, slide: string | null) => invoke<SpeechResult>("generate_speech", { jobId, id, slide }),
+  cancelSpeech: (jobId: string) => invoke<void>("cancel_speech", { jobId }),
   loadNarration: (id: string) => invoke<NarrationDocument>("load_narration", { id }),
   saveNarration: (id: string, manifest: NarrationManifest, base: string) => invoke<NarrationDocument>("save_narration", { id, manifest, base }),
   /** Stores the review marks (by slide id) in deck.html. */

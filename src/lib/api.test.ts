@@ -12,6 +12,12 @@ beforeEach(() => {
 
 // Command names and argument keys must match the #[tauri::command]s in src-tauri/src/lib.rs.
 const CASES = [
+  ["speechStatus", () => api.speechStatus(), "speech_status", undefined],
+  ["speechTakes", () => api.speechTakes("talk"), "speech_takes", { id: "talk" }],
+  ["installSpeechPack", () => api.installSpeechPack("job", null), "install_speech_pack", { jobId: "job", source: null }],
+  ["removeSpeechPack", () => api.removeSpeechPack(), "remove_speech_pack", undefined],
+  ["generateSpeech", () => api.generateSpeech("job", "talk", "intro"), "generate_speech", { jobId: "job", id: "talk", slide: "intro" }],
+  ["cancelSpeech", () => api.cancelSpeech("job"), "cancel_speech", { jobId: "job" }],
   ["listDecks", () => api.listDecks(), "list_decks", undefined],
   ["createDeck", () => api.createDeck("Talk"), "create_deck", { title: "Talk", template: null }],
   ["openDeck", () => api.openDeck("talk"), "open_deck", { id: "talk" }],

@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { SKETCH_TARGET_ATTR, useApp } from "../store";
 import { AnnotationLayer, useAnnotations } from "./PresenterTools";
+import { SpeechPlayback } from "./SpeechPlayback";
 import { SketchToolbar } from "./SketchToolbar";
 import { SlideFrame, useSlideVersion } from "./SlideFrame";
 import { LayoutPicker, Popover } from "./Templates";
@@ -221,6 +222,7 @@ export function Stage() {
           </div>
         </div>
       )}
+      <SpeechPlayback />
     </div>
   );
 }
