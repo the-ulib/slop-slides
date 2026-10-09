@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 import { useEffect } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 
-import { ChatPanel } from "./components/ChatPanel";
+import { RightSidebar } from "./components/RightSidebar";
 import { CodeView } from "./components/CodeView";
 import { Home } from "./components/Home";
 import { Presenter } from "./components/Presenter";
@@ -53,7 +53,7 @@ function Editor() {
           <>
             <ResizeHandle />
             <Panel id="chat" defaultSize={380} minSize={300} maxSize={640}>
-              <ChatPanel />
+              <RightSidebar />
             </Panel>
           </>
         )}

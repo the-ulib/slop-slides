@@ -3,6 +3,7 @@
 //! ```text
 //! <library>/<deck-id>/
 //!   deck.html      every slide, the shared styles, and the embedded player runtime
+//!   narration.json optional versioned spoken scripts, keyed by slide ID
 //!   assets/        user-attached media, referenced as assets/<file>
 //!   .slopslide/    app internals: chat history, agent session, reference docs, snapshots,
 //!                  sketches (screenshots of slides the user drew on, for the agent)
@@ -138,7 +139,7 @@ fn write_html(dir: &Path, html: &str) -> Result<()> {
     atomic_write(&dir.join(DECK_FILE), html.as_bytes())
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let tmp = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4().simple()));
     fs::write(&tmp, bytes)?;
     fs::rename(&tmp, path)?;
@@ -272,16 +273,37 @@ pub fn load(dir: &Path, id: &str) -> Result<Deck> {
     })
 }
 
-/// Saves a copy of deck.html under `.slopslide/snapshots/`, keeping the newest few.
+/// Saves deck.html and its optional narration source under matched snapshot stems.
 pub fn snapshot(dir: &Path) -> Result<()> {
     let snapshots = dir.join(INTERNAL_DIR).join("snapshots");
     fs::create_dir_all(&snapshots)?;
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
+    let stamp = format!(
+        "{}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        uuid::Uuid::new_v4().simple()
+    );
     fs::copy(dir.join(DECK_FILE), snapshots.join(format!("{stamp}.html")))?;
-    prune_oldest(&snapshots, SNAPSHOTS_KEPT)
+    let narration = dir.join(crate::narration::FILE);
+    let archived = dir.join(INTERNAL_DIR).join("narration-snapshots");
+    if narration.exists() {
+        fs::create_dir_all(&archived)?;
+        fs::copy(narration, archived.join(format!("{stamp}.json")))?;
+    }
+    prune_oldest(&snapshots, SNAPSHOTS_KEPT)?;
+    if archived.exists() {
+        for file in fs::read_dir(&archived)? {
+            let path = file?.path();
+            if let Some(stem) = path.file_stem() {
+                if !snapshots.join(stem).with_extension("html").exists() {
+                    fs::remove_file(path)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Saves a screenshot of a sketched-on slide under `.slopslide/sketches/`, keeping the
@@ -349,7 +371,35 @@ pub fn add_blank(dir: &Path, id: &str, after: Option<String>) -> Result<(Deck, S
 }
 
 pub fn duplicate(dir: &Path, id: &str, slide: &str) -> Result<(Deck, String)> {
-    edit(dir, id, |s| html::duplicate(s, slide))
+    let source = read_html(dir)?;
+    let (updated, copied) = html::duplicate(&source, slide).map_err(Error::Message)?;
+    let span = html::find_slides(&updated)
+        .into_iter()
+        .find(|s| s.id.as_deref() == Some(&copied))
+        .expect("duplicate exists");
+    let hash = format!(
+        "{}:{}",
+        html::shell_hash(
+            &updated,
+            &html::find_slides(&updated),
+            &html::find_sections(&updated)
+        ),
+        html::content_hash(&updated[span.range])
+    );
+    let original = load(dir, id)?;
+    let from_hash = format!(
+        "{}:{}",
+        original.shell_hash,
+        original
+            .slides
+            .iter()
+            .find(|s| s.id == slide)
+            .expect("source exists")
+            .hash
+    );
+    crate::narration::duplicate(dir, slide, &copied, &from_hash, &hash)?;
+    write_html(dir, &updated)?;
+    Ok((load(dir, id)?, copied))
 }
 
 pub fn set_slide_hidden(dir: &Path, id: &str, slide: &str, hidden: bool) -> Result<Deck> {

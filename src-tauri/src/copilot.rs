@@ -261,7 +261,7 @@ pub async fn run_turn(
                 "type": "stdio",
                 "command": args.lint_server,
                 "args": [mcp::FLAG, args.dir],
-                "tools": [mcp::TOOL],
+                "tools": [mcp::TOOL, mcp::READ_NARRATION, mcp::WRITE_NARRATION],
             }
         },
     });
@@ -426,7 +426,7 @@ fn permission_decision(data: &Value, dir: &Path) -> Option<(String, Value)> {
     } else {
         json!({
             "kind": "reject",
-            "feedback": "SlopSlide only allows reading files, editing files inside the deck folder, and fetching URLs, and lint_deck.",
+            "feedback": "SlopSlide only allows reading files, editing files inside the deck folder, fetching URLs, and SlopSlide's lint/narration tools.",
         })
     };
     Some((request_id, result))

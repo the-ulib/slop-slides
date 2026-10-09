@@ -1438,3 +1438,68 @@ describe("editing slides on the stage", () => {
     });
   });
 });
+
+describe("narration integration", () => {
+  it("flushes scripts before drafting, uses the selected provider, and returns to the requested slide for review", async () => {
+    const { useApp } = await freshModule();
+    const { useNarration } = await import("./narrationStore");
+    const { emptyNarration } = await import("./lib/narration");
+    let document = emptyNarration();
+    backend({
+      open_deck: () => DECK,
+      load_narration: () => document,
+      save_narration: (a) => { document = { manifest: a.manifest as typeof document.manifest, version: "saved" }; return document; },
+    });
+    await useApp.getState().openDeck("talk");
+    useApp.setState({ selection: { provider: "codex", model: "gpt-6-astra", label: "Codex", effort: "high", contextWindow: null } });
+    useNarration.getState().edit("intro", { text: "Existing draft" });
+    await useApp.getState().draftNarration("slide", "engineers", "1");
+    const commands = invoke.mock.calls.map(([c]) => c);
+    expect(commands.indexOf("save_narration")).toBeLessThan(commands.indexOf("send_message"));
+    const request = calls("send_message")[0]!.args as { prompt: string; provider: string };
+    expect(request.provider).toBe("codex");
+    expect(request.prompt).toContain('exact slide IDs: ["intro"]');
+    expect(request.prompt).toContain("write_narration MCP tools");
+    expect(useApp.getState().sidebarTab).toBe("chat");
+    useApp.getState().select("outro");
+    useApp.getState().reviewNarration();
+    expect(useApp.getState().selected).toBe("intro");
+    expect(useApp.getState().sidebarTab).toBe("narration");
+    await useNarration.getState().load(null);
+  });
+  it("keeps the deck open when unsaved narration cannot be written", async () => {
+    const { useApp } = await freshModule();
+    const { useNarration } = await import("./narrationStore");
+    const { emptyNarration } = await import("./lib/narration");
+    backend({ open_deck: () => DECK, load_narration: () => emptyNarration(), save_narration: () => { throw new Error("Disk full"); } });
+    await useApp.getState().openDeck("talk");
+    useNarration.getState().edit("intro", { text: "Keep this text" });
+    await useApp.getState().closeDeck();
+    expect(calls("close_deck")).toEqual([]);
+    expect(useApp.getState().deck?.id).toBe("talk");
+    expect(useApp.getState().sidebarTab).toBe("narration");
+    expect(useNarration.getState().edits.intro?.text).toBe("Keep this text");
+    await useApp.getState().draftNarration("deck", "", "");
+    expect(calls("send_message")).toEqual([]);
+    await useNarration.getState().load(null);
+  });
+  it("reloads narration independently of HTML and preview assets", async () => {
+    const { useApp, initEventBridge } = await freshModule();
+    const { useNarration } = await import("./narrationStore");
+    const { emptyNarration, emptyScript } = await import("./lib/narration");
+    let document = emptyNarration();
+    backend({ open_deck: () => DECK, load_narration: () => document });
+    await initEventBridge();
+    await useApp.getState().openDeck("talk");
+    document = { ...emptyNarration(), version: "external" };
+    document.manifest.slides.intro = { ...emptyScript(), text: "Agent draft" };
+    listeners.get("deck-changed")!({ payload: { deckId: "talk", paths: ["narration.json"] } });
+    // queue wait + IPC response + adoption.
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(useNarration.getState().document?.manifest.slides.intro?.text).toBe("Agent draft");
+    expect(calls("load_deck")).toEqual([]);
+    expect(useApp.getState().assetsRev).toBe(0);
+    expect(useApp.getState().selected).toBe("intro");
+    await useNarration.getState().load(null);
+  });
+});

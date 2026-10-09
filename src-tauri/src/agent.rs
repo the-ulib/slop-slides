@@ -23,7 +23,7 @@ use crate::error::{Error, Result};
 use crate::mcp;
 
 pub(crate) const SYSTEM_PROMPT: &str = include_str!("../prompts/system.md");
-/// The agent edits files only: no shell, no MCP servers.
+/// File edits, URL fetches and this app's MCP tools; no shell.
 const TOOLS: &str = "Read,Write,Edit,Glob,Grep,WebSearch,WebFetch";
 const STDERR_LIMIT: usize = 16 * 1024;
 
@@ -489,7 +489,7 @@ fn build_claude_args(
     .collect();
     args.extend([
         "--allowedTools".into(),
-        format!("{TOOLS},{}", mcp::QUALIFIED_TOOL),
+        format!("{TOOLS},{},{}", mcp::QUALIFIED_TOOL, mcp::NARRATION_TOOLS),
         "--mcp-config".into(),
         mcp_config.to_string_lossy().into_owned(),
         "--append-system-prompt-file".into(),
@@ -1160,7 +1160,7 @@ mod tests {
         assert_eq!(after(&base, "--tools").as_deref(), Some(TOOLS));
         assert_eq!(
             after(&base, "--allowedTools").as_deref(),
-            Some(format!("{TOOLS},mcp__slopslide__lint_deck").as_str())
+            Some(format!("{TOOLS},{},{}", mcp::QUALIFIED_TOOL, mcp::NARRATION_TOOLS).as_str())
         );
         assert_eq!(
             after(&base, "--mcp-config").as_deref(),

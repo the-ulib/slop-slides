@@ -172,3 +172,32 @@ from each one. Keep the user's text. Fix anything the
 edits broke: overlaps, clipping, uneven spacing, and overflow (give the text room, reflow or
 resize the layout; do not shrink it to unreadable sizes or drop words). The `moved-element` lint warning lists every
 element still waiting for this.
+
+## Optional presentation narration
+
+`narration.json` beside `deck.html` stores spoken scripts, separately from slide HTML. Only create or edit it when requested. Never put narration scripts inside deck.html or change slides while fulfilling a narration-only request. Use the existing stable slide IDs as keys; preserve entries for deleted slides so they can be recovered. Whole-deck drafting excludes hidden slides by default. Respect requested audience, approximate duration, deck language and each slide's language override.
+
+Schema version 1 (English `en` and German `de` only):
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": 0,
+  "presenterId": "preset:ryan",
+  "presenterNameSnapshot": "Ryan",
+  "defaultLanguage": "en",
+  "slides": {
+    "intro": {
+      "text": "Welcome. Today we will explore…",
+      "languageOverride": null,
+      "leadInMs": 250,
+      "tailMs": 500,
+      "silentDurationMs": null,
+      "acceptedTakeId": null,
+      "reviewedSlideHash": null
+    }
+  }
+}
+```
+
+Use the SlopSlide MCP tools `read_narration` and `write_narration` for all narration changes. Read the current manifest and its fingerprint first. Pass that fingerprint as `base` when writing. If a write reports a conflict, re-read and preserve the newer edits before retrying. Never bypass this check using raw file writes. Preserve settings and entries outside the requested scope; do not invent voice/take IDs. The write tool validates and atomically replaces the file and increments revision automatically. No extra fields. Preserve schemaVersion; if unsupported or corrupt, report the error instead of replacing the file. Scripts must be under 100 KB per slide, pauses integer milliseconds from 0 to 60000, silent duration null or 1–600000 ms. Slide IDs must be stable, not provisional `#N` identifiers. After drafting, set reviewedSlideHash to null for changed scripts; the user reviews them in Narration. Preserve existing acceptedTakeId references until replacement speech succeeds; new entries default to null. Empty scripts represent silence and require an explicit silentDurationMs before future video export. Do not touch `.slopslide` caches, snapshots or personal voice recordings for script drafting.

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { NarrationDocument, NarrationManifest } from "./narration";
 import type { Stroke } from "./ink";
 import type { Provider, ProviderInfo } from "./models";
 
@@ -101,6 +102,8 @@ export const api = {
   openDeck: (id: string) => invoke<Deck>("open_deck", { id }),
   closeDeck: () => invoke<void>("close_deck"),
   loadDeck: (id: string) => invoke<Deck>("load_deck", { id }),
+  loadNarration: (id: string) => invoke<NarrationDocument>("load_narration", { id }),
+  saveNarration: (id: string, manifest: NarrationManifest, base: string) => invoke<NarrationDocument>("save_narration", { id, manifest, base }),
   /** Stores the review marks (by slide id) in deck.html. */
   saveReview: (id: string, review: Record<string, Stroke[]>) => invoke<void>("save_review", { id, review }),
   renameDeck: (id: string, title: string) => invoke<Deck>("rename_deck", { id, title }),

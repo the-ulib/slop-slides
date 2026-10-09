@@ -1,5 +1,6 @@
 // Dev-only: when the UI runs in a plain browser, fake the Tauri IPC with read-only data
 // served by dev/browserPreview.ts. Never loaded inside the desktop app.
+import { emptyNarration, type NarrationDocument, type NarrationManifest } from "./narration";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
 interface RawDeck {
@@ -65,6 +66,16 @@ export function installBrowserMock() {
           return [];
         case "save_deck_source":
           throw new Error("Saving is not available in the browser preview.");
+        case "load_narration":
+          return JSON.parse(localStorage.getItem(`mock-narration-${String(a.id)}`) ?? "null") ?? emptyNarration();
+        case "save_narration": {
+          const key = `mock-narration-${String(a.id)}`;
+          const previous: NarrationDocument = JSON.parse(localStorage.getItem(key) ?? "null") ?? emptyNarration();
+          if (previous.version !== a.base) throw new Error("Narration changed in the browser preview.");
+          const next = { manifest: { ...(a.manifest as NarrationManifest), revision: previous.manifest.revision + 1 }, version: crypto.randomUUID() };
+          localStorage.setItem(key, JSON.stringify(next));
+          return next;
+        }
         case "load_chat":
           return JSON.parse(localStorage.getItem(`mock-chat-${String(a.id)}`) ?? "null");
         default:

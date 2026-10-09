@@ -22,6 +22,9 @@ import {
   type ProviderInfo,
 } from "./lib/models";
 
+import { useNarration } from "./narrationStore";
+import { editedManifest, narrationDraftPrompt } from "./lib/narration";
+
 export type ChatPart =
   | { kind: "text"; text: string }
   | {
@@ -165,6 +168,11 @@ interface AppState {
   codeDirty: boolean;
   /** The chat panel is shown; the user can collapse it to give the stage more room. */
   chatOpen: boolean;
+  sidebarTab: "chat" | "narration";
+  narrationReviewSlide: string | null;
+  reviewNarration: () => void;
+  setSidebarTab: (tab: "chat" | "narration") => void;
+  draftNarration: (scope: "slide" | "deck", audience: string, minutes: string) => Promise<void>;
   /** Bumped when attached assets change, reloading every slide preview. */
   assetsRev: number;
   messages: ChatMessage[];
@@ -274,6 +282,8 @@ export const useApp = create<AppState>((set, get) => ({
   view: localStorage.getItem("slopslide.view") === "code" ? "code" : "slides",
   codeDirty: false,
   chatOpen: localStorage.getItem("slopslide.chatOpen") !== "false",
+  sidebarTab: localStorage.getItem("slopslide.sidebarTab") === "narration" ? "narration" : "chat",
+  narrationReviewSlide: null,
   assetsRev: 0,
   messages: [],
   running: false,
@@ -295,6 +305,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   openDeck: async (id) => {
     try {
+      if (!(await useNarration.getState().save())) { get().setSidebarTab("narration"); return; }
       const deck = await api.openDeck(id);
       await loadDeckState(deck);
     } catch (error) {
@@ -304,6 +315,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   createDeck: async (title) => {
     try {
+      if (!(await useNarration.getState().save())) { get().setSidebarTab("narration"); return; }
       const deck = await api.createDeck(title);
       await loadDeckState(deck);
     } catch (error) {
@@ -313,8 +325,10 @@ export const useApp = create<AppState>((set, get) => ({
 
   closeDeck: async () => {
     if (get().codeDirty && !(await confirmDiscardEdits())) return;
+    if (!(await useNarration.getState().save())) { get().setSidebarTab("narration"); return; }
     await flushReviewSave();
     await api.closeDeck();
+    await useNarration.getState().load(null);
     set({ codeDirty: false, deck: null, selected: null, messages: [], running: false, presenting: false, lint: null, composerFill: null, sketches: {}, sketchesSent: {}, imageExport: null, editing: false, slideUndo: [], slideRedo: [] });
   },
 
@@ -344,6 +358,31 @@ export const useApp = create<AppState>((set, get) => ({
   setChatOpen: (chatOpen) => {
     localStorage.setItem("slopslide.chatOpen", String(chatOpen));
     set({ chatOpen });
+  },
+
+  setSidebarTab: (sidebarTab) => {
+    localStorage.setItem("slopslide.sidebarTab", sidebarTab);
+    get().setChatOpen(true);
+    set({ sidebarTab });
+  },
+
+  reviewNarration: () => {
+    const { deck, narrationReviewSlide } = get();
+    if (narrationReviewSlide && deck?.slides.some((s) => s.id === narrationReviewSlide)) get().select(narrationReviewSlide);
+    get().setSidebarTab("narration");
+  },
+
+  draftNarration: async (scope, audience, minutes) => {
+    const { deck, selected, running } = get();
+    if (!deck || running || (scope === "slide" && (!selected || selected.startsWith("#")))) return;
+    if (!(await useNarration.getState().save())) { get().setSidebarTab("narration"); return; }
+    if (get().deck?.id !== deck.id || get().running) return;
+    const { document, edits, languageEdit } = useNarration.getState();
+    if (!document || useNarration.getState().deckId !== deck.id || useNarration.getState().error) return;
+    const manifest = editedManifest(document.manifest, edits, languageEdit);
+    set({ narrationReviewSlide: scope === "slide" ? selected : deck.slides.find((s) => !s.hidden && !s.id.startsWith("#"))?.id ?? null });
+    get().setSidebarTab("chat");
+    await get().send(narrationDraftPrompt(deck, selected, scope, manifest.defaultLanguage, audience, minutes), { includeSlide: scope === "slide", attachments: [] });
   },
 
   setModel: (provider, id) => {
@@ -395,7 +434,7 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  fillComposer: (text) => set((s) => ({ composerFill: { text, rev: (s.composerFill?.rev ?? 0) + 1 } })),
+  fillComposer: (text) => set((s) => ({ sidebarTab: "chat", chatOpen: true, composerFill: { text, rev: (s.composerFill?.rev ?? 0) + 1 } })),
 
   setSketches: (update) => {
     set((s) => ({ sketches: update(s.sketches) }));
@@ -563,6 +602,11 @@ function newReply(provider: Provider): AssistantMessage {
 async function startTurn(deckId: string, replyId: string, prompt: string, compact: boolean) {
   const { selection, providers } = useApp.getState();
   try {
+    if (!(await useNarration.getState().save())) {
+      useApp.getState().setSidebarTab("narration");
+      throw new Error("Save or resolve your narration edits before starting the agent.");
+    }
+    if (useApp.getState().deck?.id !== deckId) return;
     const { provider, model, contextWindow } = selection;
     const info = providers?.find((p) => p.id === provider)?.models.find((m) => m.id === model);
     const effort = requestEffort(info, selection.effort);
@@ -617,11 +661,12 @@ async function confirmDiscardEdits(): Promise<boolean> {
 }
 
 async function loadDeckState(deck: Deck) {
-  const [chat, running] = await Promise.all([api.loadChat(deck.id), api.agentRunning(deck.id)]);
+  const [chat, running] = await Promise.all([api.loadChat(deck.id), api.agentRunning(deck.id), useNarration.getState().load(deck.id)]);
   savedReview = reviewKey(deck.review ?? {});
   const messages = Array.isArray(chat) ? (chat as ChatMessage[]) : [];
   useApp.setState({
     deck,
+    narrationReviewSlide: null,
     selected: deck.slides[0]?.id ?? null,
     assetsRev: 0,
     messages: messages.map(settleInterrupted),
@@ -865,6 +910,7 @@ function applyAgentEvent(event: AgentEvent) {
       }));
       useApp.setState({ running: false });
       persistChat();
+      void useNarration.getState().refresh();
       return;
   }
 }
@@ -872,6 +918,7 @@ function applyAgentEvent(event: AgentEvent) {
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 
 function applyDeckChanged(paths: string[]) {
+  if (paths.includes("narration.json")) void useNarration.getState().refresh();
   if (paths.some((p) => p.startsWith("assets/"))) {
     useApp.setState((s) => ({ assetsRev: s.assetsRev + 1 }));
   }
@@ -883,6 +930,7 @@ function applyDeckChanged(paths: string[]) {
     if (!deck) return;
     try {
       const next = await api.loadDeck(deck.id);
+      if (useApp.getState().deck?.id !== deck.id) return;
       const before = new Map(deck.slides.map((s) => [s.id, s.hash]));
       const changed = next.slides.find((s) => before.get(s.id) !== s.hash);
       useApp.getState().setDeck(next);

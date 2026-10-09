@@ -1,3 +1,4 @@
+import { useNarration } from "../narrationStore";
 import {
   DndContext,
   PointerSensor,
@@ -249,7 +250,9 @@ function Thumbnail({ deckId, slide, index }: { deckId: string; slide: Slide; ind
 
   const duplicate = async () => {
     try {
+      if (!(await useNarration.getState().save())) { useApp.getState().setSidebarTab("narration"); return; }
       const created = await api.duplicateSlide(deckId, slide.id);
+      await useNarration.getState().refresh();
       useApp.getState().setDeck(created.deck);
       useApp.getState().select(created.slide);
     } catch (error) {
@@ -269,6 +272,7 @@ function Thumbnail({ deckId, slide, index }: { deckId: string; slide: Slide; ind
     try {
       const before = useApp.getState().deck?.slides ?? [];
       const neighbor = (before[index + 1] ?? before[index - 1])?.id ?? null;
+      if (!(await useNarration.getState().save())) { useApp.getState().setSidebarTab("narration"); return; }
       const next = await api.deleteSlide(deckId, slide.id);
       if (selected) useApp.getState().select(neighbor);
       useApp.getState().setDeck(next);

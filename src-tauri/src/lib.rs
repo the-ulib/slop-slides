@@ -7,6 +7,7 @@ mod error;
 mod html;
 mod lint;
 mod mcp;
+mod narration;
 mod protocol;
 mod providers;
 mod review;
@@ -67,6 +68,21 @@ fn close_deck(watcher: State<DeckWatcher>) {
 #[tauri::command]
 fn load_deck(app: AppHandle, id: String) -> Result<Deck> {
     deck::load(&deck::deck_dir(&app, &id)?, &id)
+}
+
+#[tauri::command]
+fn load_narration(app: AppHandle, id: String) -> Result<narration::Document> {
+    narration::load(&deck::deck_dir(&app, &id)?)
+}
+
+#[tauri::command]
+fn save_narration(
+    app: AppHandle,
+    id: String,
+    manifest: narration::Manifest,
+    base: String,
+) -> Result<narration::Document> {
+    narration::save(&deck::deck_dir(&app, &id)?, manifest, &base)
 }
 
 #[tauri::command]
@@ -286,6 +302,8 @@ pub fn run() {
             open_deck,
             close_deck,
             load_deck,
+            load_narration,
+            save_narration,
             rename_deck,
             save_review,
             delete_deck,

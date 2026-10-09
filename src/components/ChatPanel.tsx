@@ -28,6 +28,7 @@ import { api, errorMessage } from "../lib/api";
 import { COMPACT_THRESHOLD, contextPercent, formatTokens, latestContext, windowTokens } from "../lib/context";
 import { cn } from "../lib/utils";
 import { PROVIDERS, type Provider } from "../lib/models";
+import { useNarration } from "../narrationStore";
 import { useApp, type AssistantMessage, type ChatMessage, type ChatPart, type UserMessage } from "../store";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
 
@@ -37,7 +38,8 @@ const SUGGESTIONS = [
   "Quarterly engineering update: shipped, in progress, risks, asks",
 ];
 
-export function ChatPanel() {
+export function ChatPanel({ embedded = false }: { embedded?: boolean }) {
+  const hasNarration = useNarration((s) => !!s.document && Object.keys(s.document.manifest.slides).length > 0);
   const messages = useApp((s) => s.messages);
   const running = useApp((s) => s.running);
   const provider = useApp((s) => s.selection.provider);
@@ -57,7 +59,7 @@ export function ChatPanel() {
     <div className="flex h-full flex-col bg-background">
       <div className="flex h-10 shrink-0 items-center justify-between px-3">
         <span className="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
-          Chat
+          {embedded ? "Conversation" : "Chat"}
         </span>
         <div className="flex items-center gap-1">
           {messages.length > 0 && (
@@ -71,7 +73,7 @@ export function ChatPanel() {
               New chat
             </button>
           )}
-          <button
+          {!embedded && <button
             type="button"
             title="Hide chat"
             aria-label="Hide chat"
@@ -79,9 +81,10 @@ export function ChatPanel() {
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <PanelRightClose className="size-3.5" />
-          </button>
+          </button>}
         </div>
       </div>
+      {hasNarration && <button className="mx-3 mb-2 rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent" onClick={() => useApp.getState().reviewNarration()}>Review narration</button>}
       {cliMissing && <MissingCli provider={provider} />}
       <MessageList messages={messages} running={running}>
         {messages.length === 0 && (

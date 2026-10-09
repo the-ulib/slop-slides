@@ -155,6 +155,8 @@ mod tests {
             root.0.join(INTERNAL_DIR).join("chat.json"),
             root.0.join(INTERNAL_DIR).join("snapshots/1.html"),
             root.0.join("deck.tmp-0a1b2c"),
+            root.0.join("narration.json"),
+            root.0.join("narration.tmp-0a1b2c"),
             root.0.join("assets/a.png"),
             deck.clone(),
             PathBuf::from("/somewhere/else.html"),
@@ -162,7 +164,12 @@ mod tests {
         ];
         assert_eq!(
             changed_paths(&roots, events.iter().map(PathBuf::as_path)),
-            ["assets/a.png", "assets/b.png", "deck.html"]
+            [
+                "assets/a.png",
+                "assets/b.png",
+                "deck.html",
+                "narration.json"
+            ]
         );
         assert!(changed_paths(&roots, std::iter::empty()).is_empty());
     }

@@ -9,7 +9,8 @@ vi.mock("./components/Home", () => ({ Home: () => <div data-testid="stub-home" /
 vi.mock("./components/TopBar", () => ({ TopBar: () => <div data-testid="stub-top-bar" /> }));
 vi.mock("./components/SlideRail", () => ({ SlideRail: () => <div data-testid="stub-rail" /> }));
 vi.mock("./components/Stage", () => ({ Stage: () => <div data-testid="stub-stage" /> }));
-vi.mock("./components/ChatPanel", () => ({ ChatPanel: () => <div data-testid="stub-chat" /> }));
+vi.mock("./components/ChatPanel", () => ({ ChatPanel: () => <input data-testid="stub-chat" aria-label="Chat draft" /> }));
+vi.mock("./components/NarrationPanel", () => ({ NarrationPanel: () => <div data-testid="stub-narration" /> }));
 vi.mock("./components/Presenter", () => ({ Presenter: () => <div data-testid="stub-presenter" /> }));
 vi.mock("./components/CodeView", () => ({
   CodeView: ({ active }: { active: boolean }) => <div data-testid="stub-code" data-active={String(active)} />,
@@ -20,7 +21,7 @@ import { useApp } from "./store";
 import { DECK_HTML, deckFor } from "./test/fixtures";
 
 beforeEach(() => {
-  useApp.setState({ deck: null, view: "slides", chatOpen: true, presenting: false, error: null });
+  useApp.setState({ deck: null, view: "slides", chatOpen: true, sidebarTab: "chat", presenting: false, error: null });
 });
 
 // Stub ids are prefixed: react-resizable-panels sets data-testid to each panel's id.
@@ -57,6 +58,17 @@ describe("App", () => {
     expect(["rail", "stage"].map(shown)).toEqual([true, true]);
     act(() => useApp.getState().setChatOpen(true));
     expect(shown("chat")).toBe(true);
+  });
+
+  it("keeps the chat draft mounted when switching the right sidebar to narration", () => {
+    useApp.setState({ deck: deckFor(DECK_HTML) });
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Chat draft"), { target: { value: "Keep this draft" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Narration" }));
+    expect(screen.getByRole("tabpanel").getAttribute("id")).toBe("panel-narration");
+    fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+    expect((screen.getByLabelText("Chat draft") as HTMLInputElement).value).toBe("Keep this draft");
+    expect(useApp.getState().selected).toBeNull();
   });
 
   it("overlays the presenter", () => {

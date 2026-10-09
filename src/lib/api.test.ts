@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 
+import { emptyNarration } from "./narration";
 import { api, errorMessage } from "./api";
 
 beforeEach(() => {
@@ -15,6 +16,8 @@ const CASES = [
   ["createDeck", () => api.createDeck("Talk"), "create_deck", { title: "Talk" }],
   ["openDeck", () => api.openDeck("talk"), "open_deck", { id: "talk" }],
   ["closeDeck", () => api.closeDeck(), "close_deck", undefined],
+  ["loadNarration", () => api.loadNarration("talk"), "load_narration", { id: "talk" }],
+  ["saveNarration", () => api.saveNarration("talk", emptyNarration().manifest, "missing"), "save_narration", { id: "talk", manifest: emptyNarration().manifest, base: "missing" }],
   ["loadDeck", () => api.loadDeck("talk"), "load_deck", { id: "talk" }],
   ["renameDeck", () => api.renameDeck("talk", "New"), "rename_deck", { id: "talk", title: "New" }],
   [
