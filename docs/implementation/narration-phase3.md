@@ -4,7 +4,7 @@ Implemented on `codex/narration-poc`, 9 October 2026. **Native preview/export/ca
 
 ## Try it
 
-Give each visible slide either an accepted recording matching its current script/voice/language/pace, or an explicit **Silent slide duration** in Narration. Hidden slides are excluded. Changed scripts block video preparation until their audio is regenerated; visual changes produce review notes.
+Slides with scripts need an accepted recording matching their current script/voice/language/pace. Slides without narration use **5 seconds of silence by default**, editable through **Silent slide duration** in Narration; this also applies to slides not configured yet and older null durations. Hidden slides are excluded. Changed scripts block video preparation until their audio is regenerated; visual changes produce review notes.
 
 Choose **Preview narrated deck** in the right Narration sidebar. Preparation creates a frozen render/audio job. Play, pause or seek using the playback controls; the picture follows the exported timeline. Choose **Export MP4**, or use **Export → Narrated MP4**, then choose a destination. Progress and Cancel are available throughout preparation/encoding. Closing a ready preview removes its scratch job; reopening prepares the latest revision.
 

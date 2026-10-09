@@ -1,5 +1,6 @@
 import type { Deck } from "./api";
 
+export const DEFAULT_SILENT_DURATION_MS = 5000;
 export type NarrationLanguage = "en" | "de";
 export interface SlideNarration {
   text: string;
@@ -29,7 +30,7 @@ export const emptyNarration = (): NarrationDocument => ({
   version: "missing",
   manifest: { schemaVersion: 3, revision: 0, speechProviderId: "qwen-local", presenterId: "preset:ryan", presenterNameSnapshot: "Ryan", defaultLanguage: "en", pace: 1.1, slides: {} },
 });
-export const emptyScript = (): SlideNarration => ({ text: "", languageOverride: null, speechProviderIdOverride: null, presenterIdOverride: null, presenterNameSnapshotOverride: null, paceOverride: null, leadInMs: 250, tailMs: 500, silentDurationMs: null, acceptedTakeId: null, reviewedSlideHash: null });
+export const emptyScript = (): SlideNarration => ({ text: "", languageOverride: null, speechProviderIdOverride: null, presenterIdOverride: null, presenterNameSnapshotOverride: null, paceOverride: null, leadInMs: 250, tailMs: 500, silentDurationMs: DEFAULT_SILENT_DURATION_MS, acceptedTakeId: null, reviewedSlideHash: null });
 export function slideSpeechSettings(manifest: NarrationManifest, script: SlideNarration) {
   return {
     speechProviderId: script.speechProviderIdOverride ?? manifest.speechProviderId ?? "qwen-local",

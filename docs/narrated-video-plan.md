@@ -67,7 +67,7 @@ Provider, presenter and pace now default to **This slide** in Narration; choose 
 
 ### Phase 3 implementation and handoff
 
-Narration now offers **Preview narrated deck**, with play/pause/seek and synchronized frozen slide images. **Export → Narrated MP4** produces static 1080p/30 fps H.264/AAC video through the bundled macOS helper, with progress and cancellation. Each visible slide needs current accepted speech or an explicit silent duration. Export uses the provider-independent accepted recordings; Qwen is not part of the video renderer.
+Narration now offers **Preview narrated deck**, with play/pause/seek and synchronized frozen slide images. **Export → Narrated MP4** produces static 1080p/30 fps H.264/AAC video through the bundled macOS helper, with progress and cancellation. Slides with scripts need current accepted speech; slides without narration use an editable 5-second silent duration by default. Export uses the provider-independent accepted recordings; Qwen is not part of the video renderer.
 
 Native 10-minute export, six-slide app preview/export, resize and cancellation checks passed. See the [Phase 3 handoff and limits](implementation/narration-phase3.md) and [verification evidence](implementation/narration-phase3-smoke.json).
 
@@ -234,7 +234,7 @@ Split long scripts at sentence boundaries within the selected engine's tested li
 
 Cache by normalized spoken text, language, provider/adapter identity, voice-profile revision, model ID/revision or checksum, engine version, quantization, synthesis settings/seed, pace processing and normalization policy. Apply pace once via the selected adapter; never combine native speed and Sonic unintentionally. Preserve best-available cloud provenance without promising immutable provider model versions. Preserve the chosen WAV take so exports remain stable even when floating-point inference is not bitwise deterministic across devices.
 
-Compute durations from decoded sample counts, never word count. Each slide occupies lead-in silence + actual audio + tail silence, or an explicit silent duration. Start with 250 ms lead-in and 500 ms tail defaults, editable by the user. Use an integer/rational timeline, resample to the encoder format once, and derive frame boundaries from cumulative time so rounding does not accumulate across slides. Pad the final frame/audio as required and test the encoded result's synchronization.
+Compute durations from decoded sample counts, never word count. Each slide occupies lead-in silence + actual audio + tail silence, or an editable silent duration (5 seconds by default, including unconfigured slides and legacy null values). Start with 250 ms lead-in and 500 ms tail defaults, editable by the user. Use an integer/rational timeline, resample to the encoder format once, and derive frame boundaries from cumulative time so rounding does not accumulate across slides. Pad the final frame/audio as required and test the encoded result's synchronization.
 
 No automatic word-level subtitles in v1: Qwen output is not guaranteed to supply reliable word timestamps. A later local forced-alignment stage can produce SRT/VTT without pretending estimated word durations are alignment.
 

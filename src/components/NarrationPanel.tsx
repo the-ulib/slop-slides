@@ -4,7 +4,7 @@ import { useApp } from "../store";
 import { useVideo } from "../videoStore";
 import { useNarration } from "../narrationStore";
 import { SpeechControls } from "./SpeechControls";
-import { editedManifest, emptyScript, slideReviewHash, type NarrationLanguage } from "../lib/narration";
+import { editedManifest, DEFAULT_SILENT_DURATION_MS, emptyScript, slideReviewHash, type NarrationLanguage } from "../lib/narration";
 
 const field = "w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-50";
 export function NarrationPanel() {
@@ -78,11 +78,11 @@ export function NarrationPanel() {
           <label className="text-muted-foreground">Pause after (ms)<input aria-label="Pause after speech" type="number" min={0} max={60000} step={50} className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.tailMs} onChange={(e) => edit({ tailMs: Math.min(60000, Math.max(0, Math.round(Number(e.target.value)))) })} /></label>
         </div>
         {!words && <label className="mt-3 block text-muted-foreground">Silent slide duration (seconds)
-          <input aria-label="Silent slide duration" type="number" min={0.1} max={600} step={0.5} placeholder="Choose a duration for a silent slide" className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.silentDurationMs === null ? "" : script.silentDurationMs / 1000} onChange={(e) => edit({ silentDurationMs: e.target.value === "" ? null : Math.min(600000, Math.max(100, Math.round(Number(e.target.value) * 1000))) })} />
+          <input aria-label="Silent slide duration" type="number" min={0.1} max={600} step={0.5} placeholder="5 seconds by default" className={`${field} mt-1 text-foreground`} disabled={!editable} value={(script.silentDurationMs ?? DEFAULT_SILENT_DURATION_MS) / 1000} onChange={(e) => edit({ silentDurationMs: e.target.value === "" ? null : Math.min(600000, Math.max(100, Math.round(Number(e.target.value) * 1000))) })} />
         </label>}
         <SpeechControls deck={deck} selected={selected} manifest={manifest} editable={editable} />
         <button className={`${field} mt-4`} disabled={!manifest || !!state.error} onClick={() => void useVideo.getState().open(deck.id)}>Preview narrated deck</button>
-        <p className="mt-1 text-muted-foreground">Visible slides need generated speech or an explicit silent duration.</p>
+        <p className="mt-1 text-muted-foreground">Slides without narration stay on screen for 5 seconds by default. Adjust their silent duration above.</p>
         <div className="mt-5 border-t border-border pt-4">
           <div className="mb-2 font-medium">Draft with your agent</div>
           <p className="mb-3 leading-relaxed text-muted-foreground">Uses your selected chat model. Review and edit the result before generating speech.</p>

@@ -15,6 +15,20 @@ beforeEach(() => {
 });
 afterEach(async () => { await useNarration.getState().load(null); vi.useRealTimers(); });
 describe("NarrationPanel", () => {
+  it("starts missing and legacy unset silent slides at 5 seconds and retains custom durations", () => {
+    render(<NarrationPanel />);
+    expect((screen.getByLabelText("Silent slide duration") as HTMLInputElement).value).toBe("5");
+    const document = emptyNarration();
+    document.manifest.slides.intro = { ...emptyScript(), silentDurationMs: null };
+    act(() => useNarration.setState({ document }));
+    expect((screen.getByLabelText("Silent slide duration") as HTMLInputElement).value).toBe("5");
+    fireEvent.change(screen.getByLabelText("Silent slide duration"), { target: { value: "7.5" } });
+    expect(useNarration.getState().edits.intro!.silentDurationMs).toBe(7500);
+    act(() => useApp.getState().select("outro"));
+    expect((screen.getByLabelText("Silent slide duration") as HTMLInputElement).value).toBe("5");
+    act(() => useApp.getState().select("intro"));
+    expect((screen.getByLabelText("Silent slide duration") as HTMLInputElement).value).toBe("7.5");
+  });
   it("preserves scripts when selecting another slide and flags visual edits for review", () => {
     render(<NarrationPanel />);
     fireEvent.change(screen.getByLabelText("Narration script"), { target: { value: "Welcome" } });

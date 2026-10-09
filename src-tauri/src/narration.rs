@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 use crate::html;
 
 pub const FILE: &str = "narration.json";
+pub const DEFAULT_SILENT_DURATION_MS: u32 = 5000;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -47,7 +48,7 @@ impl Default for SlideNarration {
             pace_override: None,
             lead_in_ms: 250,
             tail_ms: 500,
-            silent_duration_ms: None,
+            silent_duration_ms: Some(DEFAULT_SILENT_DURATION_MS),
             accepted_take_id: None,
             reviewed_slide_hash: None,
         }

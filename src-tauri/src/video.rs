@@ -97,15 +97,14 @@ pub fn timeline(
             issues.push(format!("{label}: a stable slide ID is required."));
             continue;
         };
-        let Some(script) = manifest.slides.get(id) else {
-            issues.push(format!(
-                "{label}: add speech or an explicit silent duration in Narration."
-            ));
-            continue;
-        };
+        let default_script = narration::SlideNarration::default();
+        let script = manifest.slides.get(id).unwrap_or(&default_script);
         let (duration, lead, take_id, take_sha256) = if script.text.trim().is_empty() {
-            match script.silent_duration_ms {
-                Some(ms) if ms > 0 => (u64::from(ms) * RATE / 1000, 0, None, None),
+            match script
+                .silent_duration_ms
+                .unwrap_or(narration::DEFAULT_SILENT_DURATION_MS)
+            {
+                ms if ms > 0 && ms <= 600_000 => (u64::from(ms) * RATE / 1000, 0, None, None),
                 _ => {
                     issues.push(format!("{label}: choose a silent duration in Narration."));
                     continue;
@@ -663,6 +662,41 @@ mod tests {
         take
     }
     use speech_connector::SpeechProvider;
+    #[test]
+    fn unconfigured_and_legacy_unset_silent_slides_use_five_seconds_and_keep_custom_timing() {
+        let dir = Temp::new();
+        let root = Temp::new();
+        let mut m = narration::Manifest::default();
+        // A has never been configured. B is an old explicit null. C is custom.
+        m.slides.insert(
+            "b".into(),
+            narration::SlideNarration {
+                text: " \n ".into(),
+                silent_duration_ms: None,
+                ..Default::default()
+            },
+        );
+        m.slides.insert(
+            "c".into(),
+            narration::SlideNarration {
+                silent_duration_ms: Some(2500),
+                ..Default::default()
+            },
+        );
+        save(&dir.0, &html(&["a", "b", "c"]), &m);
+        let original = fs::read(dir.0.join("narration.json")).unwrap();
+        let t = freeze(&dir.0, &root.0, "job", "deck", &AtomicBool::new(false)).unwrap();
+        assert_eq!(t.total_samples, RATE * 25 / 2);
+        assert_eq!(t.total_frames, 375);
+        assert_eq!(t.slides[0].end_sample, RATE * 5);
+        assert_eq!(t.slides[1].end_sample, RATE * 10);
+        let pcm = cache::decode_wav(&fs::read(root.0.join("timeline.wav")).unwrap()).unwrap();
+        assert_eq!(pcm.len() as u64, t.total_samples);
+        assert!(pcm.iter().all(|s| *s == 0));
+        assert_eq!(fs::read(dir.0.join("narration.json")).unwrap(), original);
+        m.slides.get_mut("c").unwrap().silent_duration_ms = Some(0);
+        assert!(timeline(&html(&["a", "b", "c"]), &m, &dir.0, "job", "deck").is_err());
+    }
     #[test]
     fn cumulative_rounding_does_not_drift_and_final_audio_is_padded() {
         let dir = Temp::new();
