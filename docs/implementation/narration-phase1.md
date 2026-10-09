@@ -38,4 +38,4 @@ The browser preview was visually checked at 1480×920, including save/reopen, ta
 
 ## Next session
 
-Continue from [Phase 2’s handoff](narration-phase2.md), including its remaining native acceptance check. Saved personal presenters remain Phase 4.
+Continue from [Phase 2’s handoff](narration-phase2.md), whose native setup/generation/playback acceptance now passes. Saved personal presenters remain Phase 4.

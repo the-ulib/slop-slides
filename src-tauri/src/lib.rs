@@ -40,8 +40,12 @@ struct UpdatedSlide {
 }
 
 #[tauri::command]
-fn list_decks(app: AppHandle) -> Result<Vec<DeckSummary>> {
-    deck::list(&deck::library_root(&app)?)
+async fn list_decks(app: AppHandle) -> Result<Vec<DeckSummary>> {
+    // Documents access can wait for macOS permission/cloud services. Keep the
+    // window's event loop free while the filesystem resolves that request.
+    tauri::async_runtime::spawn_blocking(move || deck::list(&deck::library_root(&app)?))
+        .await
+        .map_err(|e| error::Error::msg(e.to_string()))?
 }
 
 #[tauri::command]

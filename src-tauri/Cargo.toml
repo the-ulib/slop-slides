@@ -52,3 +52,7 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
 [dev-dependencies]
 ctor = "1.0.13"
 jsonschema = { version = "0.33.0", default-features = false }
+
+# Model integrity checks hash 2.5 GB; keep the debug preview responsive too.
+[profile.dev.package.sha2]
+opt-level = 3

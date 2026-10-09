@@ -354,7 +354,7 @@ impl SpeechManager {
                             "loading",
                             index as u64,
                             total,
-                            "Loading local voice model…",
+                            "Verifying and loading local voice model…",
                             None,
                         );
                         let model_root = root.clone();

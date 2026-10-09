@@ -88,6 +88,19 @@ describe("Home", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry opening library" }));
     await waitFor(() => expect(cards()).toHaveLength(3));
     expect(screen.queryByRole("button", { name: "Retry opening library" })).toBeNull();
+    expect(useApp.getState().error).toBeNull();
+  });
+
+  it("does not clear an unrelated error when loading the library", async () => {
+    let finish!: (value: DeckSummary[]) => void;
+    const normalInvoke = invoke.getMockImplementation()!;
+    invoke.mockImplementation((command: string, ...args: unknown[]) => command === "list_decks"
+      ? new Promise<DeckSummary[]>((resolve) => { finish = resolve; }) : normalInvoke(command, ...args));
+    render(<Home />);
+    useApp.getState().setError("An unrelated operation failed");
+    await act(async () => finish(decks));
+    expect(cards()).toHaveLength(3);
+    expect(useApp.getState().error).toBe("An unrelated operation failed");
   });
 
   it("creates a deck with the typed title", async () => {

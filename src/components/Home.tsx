@@ -19,6 +19,7 @@ export function Home() {
     setLoading(true);
     try {
       setDecks(await api.listDecks());
+      if (useApp.getState().error === libraryError) useApp.getState().setError(null);
       setLibraryError(null);
     } catch (error) {
       const message = errorMessage(error);

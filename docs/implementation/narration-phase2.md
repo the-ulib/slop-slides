@@ -1,6 +1,6 @@
 # Phase 2 — local stock speech
 
-Implemented 9 October 2026 on `codex/narration-poc`. Automated checks and real worker smoke passed. **Native UI acceptance is pending**, so this is not a completed distribution qualification. No PR or push.
+Implemented 9 October 2026 on `codex/narration-poc`. Automated checks, real worker smoke and **native preview acceptance passed**. Distribution qualification remains pending. No PR or push.
 
 ## Try it
 
@@ -33,10 +33,16 @@ The pace implementation vendors unmodified [Sonic](https://github.com/waywardgee
 
 ## Verified and remaining
 
-`./check.sh` passed **847 frontend tests and 308 Rust tests**, with four opt-in live tests ignored; typecheck/build, rustfmt and clippy passed. Coverage includes setup cancellation/resume using tiny local files, checksums, interruptible network waits, worker protocol/cancellation, cache corruption/identity, source conflict acceptance, stale UI events/deck loads, saving presenter/pace and preserving prior recordings. The named debug app bundle builds successfully at approximately 53.4 MiB.
+`./check.sh` passed **848 frontend tests and 308 Rust tests**, with four opt-in live tests ignored; typecheck/build, rustfmt and clippy passed. Coverage includes setup cancellation/resume using tiny local files, checksums, interruptible network waits, worker protocol/cancellation, cache corruption/identity, source conflict acceptance, stale UI events/deck loads, saving presenter/pace and preserving prior recordings. The named debug app bundle builds successfully (roughly 52–54 MiB for these debug builds).
 
 `dev/speech-smoke.py` ran against the actual compiled helper and pinned local model. English: 11.76 s; German at 1.1×: 10.237 s; English at 1.1×: 11.049 s. Native DSP sine tests check duration and pitch. Hard cancellation returned in about 0.038 s without an incomplete WAV. A restarted helper reproduced the original English bytes, which also match the Phase 0 recording. Retained [machine-readable results](narration-phase2-smoke.json) describe this one run, not a benchmark. The user approved the earlier 1.1× audition; this Sonic implementation has not yet received a separate human listening judgment.
 
-**Immediate handoff:** the native preview cannot enumerate `/Users/uli/Documents/SlopSlide` and reports `Interrupted system call (os error 4)`. Independent shell directory listings also stall. Restarting the preview did not resolve it; the underlying cause is unknown. Home now shows a contextual message and **Retry opening library**. Resolve the filesystem issue, then verify import → generate → native play/seek → reopen → cached reuse. Do not mark these as passed based on the worker smoke or frontend tests.
+**Native acceptance on retry:** the library opened, and the native picker imported/verified the full existing pack. Generating the saved 75-word opening produced **32.89625 s**, 789,510 samples at 24 kHz, SHA-256 `65307647ce33bcd9bce3fb56443a9fcf089e0fd9e8e3392612b6498fbd6b9542`. Playback advanced to 22 s and the native backward-seek button moved the paused position from 28 s to 13 s. Chat retained the player; closing/reopening the deck restored its duration and controls. Reuse completed within the next roughly 0.5-second UI observation; the accepted ID, WAV checksum and take count remained unchanged. Original script text, other entries, language/presenter and lead/tail pauses were preserved. Temporary jobs were cleaned up. A later process inspection confirmed the resident helper exited after the idle timeout while the app stayed open.
 
-Also pending: a full HTTPS download/resume on a clean machine, broader preset/long-script quality, total app memory and baseline hardware. The tested engine used roughly 3 GB in Phase 0; an 8 GB system and Intel Mac were not tested. Keep those checks before support/distribution claims. Once native acceptance passes, proceed to Phase 3's timeline and MP4 integration.
+The debug build initially spent a long time in unoptimized SHA-256 verification. `profile.dev.package.sha2` now uses optimization level 3, retaining the full checksum check; the rebuilt preview reached real synthesis promptly. One process sample during generation showed helper RSS 3,158,096 KiB and app RSS 129,168 KiB. This excludes separate WebKit processes and is neither peak nor total-app memory.
+
+The earlier `Interrupted system call` library failure recovered on retry. Rebuilding reproduced the intermittent access failure; one retry stalled the synchronous UI command. Library enumeration now runs on a blocking worker thread so macOS/filesystem waits leave the window event loop free, and successful retry clears the obsolete toast. The underlying filesystem cause remains unknown. After moving the read off the UI thread, the rebuilt preview opened the library and restored the same recording after a full app restart; native playback again advanced normally. The screenshot below records this final ready-to-play build.
+
+![Native speech preview](narration-phase2-native.png)
+
+Also pending: a full HTTPS download/resume on a clean machine, broader preset/long-script quality, total app memory and baseline hardware. The tested engine used roughly 3 GB in Phase 0; an 8 GB system and Intel Mac were not tested. Keep those checks before support/distribution claims. The next feature is Phase 3’s timeline and MP4 integration.
