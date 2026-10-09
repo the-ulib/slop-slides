@@ -1,25 +1,22 @@
-//! Local stock narration: one active job, a warm native worker, immutable WAV takes.
+//! Provider-neutral deck orchestration and immutable WAV takes.
 pub mod cache;
-mod models;
-mod worker;
 use crate::{
     deck,
     error::{Error, Result},
     narration,
 };
 use serde::Serialize;
+use speech_connector::{
+    Artifact, Cancellation, Descriptor, FixtureProvider, QwenConnector, SpeechProvider,
+};
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::watch;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,14 +32,12 @@ pub struct Job {
 }
 struct Active {
     job: Job,
-    cancel: Arc<AtomicBool>,
-    signal: watch::Sender<bool>,
+    cancel: Cancellation,
 }
 #[derive(Default)]
 struct Inner {
     active: Mutex<Option<Active>>,
-    worker: tokio::sync::Mutex<Option<worker::Worker>>,
-    epoch: AtomicU64,
+    providers: Mutex<BTreeMap<String, Arc<dyn SpeechProvider>>>,
 }
 #[derive(Clone, Default)]
 pub struct SpeechManager(Arc<Inner>);
@@ -61,10 +56,7 @@ impl Drop for Lease {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    installed: bool,
-    runtime_available: bool,
-    total_bytes: u64,
-    engine_version: &'static str,
+    providers: Vec<Descriptor>,
     job: Option<Job>,
 }
 #[derive(Clone, Serialize)]
@@ -108,12 +100,32 @@ fn runtime(app: &AppHandle) -> Option<PathBuf> {
     None
 }
 impl SpeechManager {
+    fn provider(&self, app: &AppHandle, id: &str) -> Result<Arc<dyn SpeechProvider>> {
+        let mut providers = self.0.providers.lock().expect("speech providers");
+        if providers.is_empty() {
+            providers.insert(
+                speech_connector::QWEN_ID.into(),
+                Arc::new(QwenConnector::new(root(app)?, runtime(app))),
+            );
+            if cfg!(debug_assertions)
+                && std::env::var("SLOPSLIDE_SPEECH_FIXTURE").as_deref() == Ok("1")
+            {
+                providers.insert("fixture-tone".into(), Arc::new(FixtureProvider));
+            }
+        }
+        providers.get(id).cloned().ok_or_else(||Error::msg("This deck's speech provider is unavailable. Choose an available provider; previous recordings remain playable."))
+    }
     pub fn status(&self, app: &AppHandle) -> Result<Status> {
+        self.provider(app, speech_connector::QWEN_ID)?;
         Ok(Status {
-            installed: models::installed(&root(app)?),
-            runtime_available: runtime(app).is_some(),
-            total_bytes: models::total_bytes(),
-            engine_version: cache::ENGINE,
+            providers: self
+                .0
+                .providers
+                .lock()
+                .expect("speech providers")
+                .values()
+                .map(|p| p.describe())
+                .collect(),
             job: self
                 .0
                 .active
@@ -130,7 +142,7 @@ impl SpeechManager {
         deck_id: Option<String>,
         revision: Option<u64>,
         total: u64,
-    ) -> Result<(Lease, Arc<AtomicBool>, watch::Receiver<bool>)> {
+    ) -> Result<(Lease, Cancellation)> {
         uuid::Uuid::parse_str(&id).map_err(|_| Error::msg("Invalid speech job ID."))?;
         let mut active = self.0.active.lock().expect("speech job");
         if active.is_some() {
@@ -138,8 +150,7 @@ impl SpeechManager {
                 "Another speech job is running. Wait or cancel it first.",
             ));
         }
-        let cancel = Arc::new(AtomicBool::new(false));
-        let (signal, receiver) = watch::channel(false);
+        let cancel = Cancellation::default();
         *active = Some(Active {
             job: Job {
                 id: id.clone(),
@@ -149,19 +160,16 @@ impl SpeechManager {
                 stage: "starting".into(),
                 completed: 0,
                 total,
-                detail: "Starting local speech…".into(),
+                detail: "Starting speech…".into(),
             },
             cancel: cancel.clone(),
-            signal,
         });
-        self.0.epoch.fetch_add(1, Ordering::Relaxed);
         Ok((
             Lease {
                 manager: self.clone(),
                 id,
             },
             cancel,
-            receiver,
         ))
     }
     #[allow(clippy::too_many_arguments)] // A single event carries stage, counts, detail and failure.
@@ -193,69 +201,44 @@ impl SpeechManager {
     pub fn cancel(&self, id: &str) -> Result<()> {
         let active = self.0.active.lock().expect("speech job");
         if let Some(a) = active.as_ref().filter(|a| a.job.id == id) {
-            a.cancel.store(true, Ordering::Relaxed);
-            let _ = a.signal.send(true);
+            a.cancel.cancel();
         }
         Ok(())
     }
-    fn idle(&self) {
+    pub async fn install(
+        &self,
+        app: AppHandle,
+        id: String,
+        provider_id: String,
+        source: Option<String>,
+    ) -> Result<()> {
+        let provider = self.provider(&app, &provider_id)?;
+        let descriptor = provider.describe();
+        let (lease, cancel) = self.begin(
+            id.clone(),
+            "setup",
+            None,
+            None,
+            descriptor.setup.as_ref().map_or(0, |s| s.total_bytes),
+        )?;
         let manager = self.clone();
-        let epoch = self.0.epoch.load(Ordering::Relaxed);
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(120)).await;
-            let mut worker = manager.0.worker.lock().await;
-            if manager.0.epoch.load(Ordering::Relaxed) == epoch
-                && manager.0.active.lock().expect("speech job").is_none()
-            {
-                if let Some(mut old) = worker.take() {
-                    old.stop().await;
-                }
-            }
-        });
-    }
-    pub async fn install(&self, app: AppHandle, id: String, source: Option<String>) -> Result<()> {
-        if runtime(&app).is_none() {
-            return Err(Error::msg(
-                "Local speech requires the macOS speech helper in this build.",
-            ));
-        }
-        let (lease, cancel, _) =
-            self.begin(id.clone(), "setup", None, None, models::total_bytes())?;
-        if let Some(mut old) = self.0.worker.lock().await.take() {
-            old.stop().await;
-        }
-        let root = root(&app)?;
-        let manager = self.clone();
-        let progress_app = app.clone();
-        let progress_id = id.clone();
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let mut last = Instant::now() - Duration::from_secs(1);
-            let last = Mutex::new(&mut last);
-            models::install(
-                &root,
-                source.as_deref().map(Path::new),
-                &cancel,
-                &|bytes, detail| {
+        let event_app = app.clone();
+        let event_id = id.clone();
+        let last = Mutex::new(Instant::now() - Duration::from_secs(1));
+        let result = provider
+            .setup(
+                source.map(PathBuf::from),
+                cancel,
+                Arc::new(move |stage, n, total, detail| {
                     let mut previous = last.lock().expect("progress throttle");
-                    if previous.elapsed() >= Duration::from_millis(150)
-                        || bytes == models::total_bytes()
-                    {
-                        **previous = Instant::now();
-                        manager.report(
-                            &progress_app,
-                            &progress_id,
-                            "installing",
-                            bytes,
-                            models::total_bytes(),
-                            detail,
-                            None,
-                        );
+                    if previous.elapsed() >= Duration::from_millis(150) || n == total {
+                        *previous = Instant::now();
+                        manager.report(&event_app, &event_id, stage, n, total, detail, None);
                     }
-                },
+                }),
             )
-        })
-        .await
-        .map_err(|e| Error::msg(e.to_string()))?;
+            .await
+            .map_err(Error::from);
         self.report(
             &app,
             &id,
@@ -263,7 +246,7 @@ impl SpeechManager {
             0,
             0,
             if result.is_ok() {
-                "Local speech is ready."
+                "Speech provider is ready."
             } else {
                 "Setup stopped; retry to resume."
             },
@@ -272,16 +255,10 @@ impl SpeechManager {
         drop(lease);
         result
     }
-    pub async fn remove(&self, app: &AppHandle) -> Result<()> {
-        let (lease, _, _) =
-            self.begin(uuid::Uuid::new_v4().to_string(), "remove", None, None, 0)?;
-        if let Some(mut old) = self.0.worker.lock().await.take() {
-            old.stop().await;
-        }
-        let root = root(app)?;
-        let result = tauri::async_runtime::spawn_blocking(move || models::remove(&root))
-            .await
-            .map_err(|e| Error::msg(e.to_string()))?;
+    pub async fn remove(&self, app: &AppHandle, provider_id: &str) -> Result<()> {
+        let provider = self.provider(app, provider_id)?;
+        let (lease, _) = self.begin(uuid::Uuid::new_v4().to_string(), "remove", None, None, 0)?;
+        let result = provider.remove().await.map_err(Error::from);
         drop(lease);
         result
     }
@@ -313,24 +290,22 @@ impl SpeechManager {
         if sources.is_empty() {
             return Err(Error::msg("Write a script for a visible slide first."));
         }
-        let root = root(&app)?;
-        let bin = runtime(&app)
-            .ok_or_else(|| Error::msg("Local speech is not included in this build."))?;
-        if !models::installed(&root) {
-            return Err(Error::msg("Set up the local voice pack first."));
+        let provider = self.provider(&app, &doc.manifest.speech_provider_id)?;
+        let descriptor = provider.describe();
+        for (_, source) in &sources {
+            descriptor.validate(&source.request())?;
         }
         let total = sources.len() as u64;
-        let (lease, cancel, mut receiver) = self.begin(
+        let (lease, cancel) = self.begin(
             id.clone(),
             "generation",
             Some(deck_id),
             Some(doc.manifest.revision),
             total,
         )?;
-        let mut worker = self.0.worker.lock().await;
         let result = async {
             let jobs = cache::safe_directory(&dir, "jobs")?.join(&id);
-            fs::create_dir_all(&jobs)?;
+            fs::create_dir(&jobs)?;
             let _temp = Temp(jobs.clone());
             let mut result = GenerationResult {
                 generated: 0,
@@ -338,87 +313,47 @@ impl SpeechManager {
                 superseded: 0,
             };
             for (index, (slide, source)) in sources.iter().enumerate() {
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(Error::msg(
-                        "Audio generation cancelled. Previous recordings are kept.",
-                    ));
-                }
-                let take = if let Some(take) = cache::find(&dir, &source.key())? {
+                cancel.check()?;
+                let key = source.key_for(&descriptor.engine_version, &descriptor.model_revision);
+                let take = if let Some(take) = cache::find(&dir, &key)? {
                     result.reused += 1;
                     take
                 } else {
-                    if worker.is_none() {
-                        self.report(
-                            &app,
-                            &id,
-                            "loading",
-                            index as u64,
-                            total,
-                            "Verifying and loading local voice model…",
-                            None,
-                        );
-                        let model_root = root.clone();
-                        let check = cancel.clone();
-                        tauri::async_runtime::spawn_blocking(move || {
-                            models::verify(&model_root, &check)
-                        })
-                        .await
-                        .map_err(|e| Error::msg(e.to_string()))??;
-                        *worker = Some(worker::Worker::start(&bin, &root, &mut receiver).await?);
-                    }
-                    let chunks = cache::segments(&source.text);
-                    let mut pcm = Vec::new();
-                    for (part, text) in chunks.iter().enumerate() {
-                        let output = jobs.join("segment.wav");
-                        let detail = format!(
-                            "Slide {} of {} · passage {} of {}",
-                            index + 1,
-                            total,
-                            part + 1,
-                            chunks.len()
-                        );
-                        self.report(&app, &id, "generating", index as u64, total, &detail, None);
-                        let n = worker
-                            .as_mut()
-                            .expect("worker loaded")
-                            .generate(source, text, &output, &mut receiver, &|frames| {
-                                self.report(
-                                    &app,
-                                    &id,
-                                    "generating",
-                                    index as u64,
+                    let manager = self.clone();
+                    let event_app = app.clone();
+                    let event_id = id.clone();
+                    let current = index as u64;
+                    let artifact = provider
+                        .synthesize(
+                            source.request(),
+                            &jobs,
+                            cancel.clone(),
+                            Arc::new(move |stage, _, _, detail| {
+                                manager.report(
+                                    &event_app,
+                                    &event_id,
+                                    stage,
+                                    current,
                                     total,
-                                    &format!("{detail} · {:.0}s synthesized", frames as f64 / 12.5),
+                                    &format!("Slide {} of {total} · {detail}", current + 1),
                                     None,
-                                )
-                            })
-                            .await?;
-                        let mut segment = cache::decode_wav(&fs::read(&output)?)?;
-                        if segment.len() != n {
-                            return Err(Error::msg(
-                                "Worker audio length does not match its result.",
-                            ));
-                        }
-                        if !pcm.is_empty() {
-                            pcm.resize(pcm.len() + 2880, 0);
-                        }
-                        pcm.append(&mut segment);
-                        if pcm.len() > 600 * 24000 {
-                            return Err(Error::msg(
-                                "Recording exceeds ten minutes per slide. Shorten the script.",
-                            ));
-                        }
-                    }
-                    if cancel.load(Ordering::Relaxed) {
-                        return Err(Error::msg("Audio generation cancelled."));
-                    }
+                                );
+                            }),
+                        )
+                        .await?;
+                    let take = import_artifact(
+                        &dir,
+                        source.clone(),
+                        &descriptor,
+                        &jobs,
+                        &artifact,
+                        &cancel,
+                    )?;
                     result.generated += 1;
-                    cache::publish(&dir, source.clone(), &pcm)?
+                    take
                 };
                 let active = self.0.active.lock().expect("speech job");
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(Error::msg("Audio generation cancelled."));
-                }
+                cancel.check()?;
                 if !cache::accept(&dir, slide, &take)? {
                     result.superseded += 1;
                 }
@@ -436,12 +371,6 @@ impl SpeechManager {
             Ok(result)
         }
         .await;
-        if result.is_err() {
-            if let Some(mut old) = worker.take() {
-                old.stop().await;
-            }
-        }
-        drop(worker);
         self.report(
             &app,
             &id,
@@ -456,9 +385,46 @@ impl SpeechManager {
             result.as_ref().err().map(ToString::to_string),
         );
         drop(lease);
-        self.idle();
         result
     }
+}
+/// Only import bounded, validated artifacts from this job's private spool.
+fn import_artifact(
+    dir: &Path,
+    source: cache::Source,
+    provider: &Descriptor,
+    spool: &Path,
+    artifact: &Artifact,
+    cancel: &Cancellation,
+) -> Result<cache::Take> {
+    cancel.check()?;
+    if source.provider_id != provider.id {
+        return Err(Error::msg(
+            "Speech result has a different provider binding.",
+        ));
+    }
+    let meta = fs::symlink_metadata(&artifact.path)?;
+    if !meta.is_file()
+        || meta.file_type().is_symlink()
+        || meta.len() > 600 * 96000 * 4 + 4096
+        || !artifact
+            .path
+            .canonicalize()?
+            .starts_with(spool.canonicalize()?)
+    {
+        return Err(Error::msg(
+            "Speech artifact is outside its job or exceeds the audio limit.",
+        ));
+    }
+    let decoded = speech_connector::audio::decode(&fs::read(&artifact.path)?)?;
+    if decoded.sample_rate != artifact.sample_rate || decoded.samples.len() != artifact.samples {
+        return Err(Error::msg(
+            "Provider audio length/format does not match its result.",
+        ));
+    }
+    let pcm = speech_connector::audio::normalize(decoded)?;
+    cancel.check()?;
+    cache::publish_for(dir, source, &pcm, provider)
 }
 struct Temp(PathBuf);
 impl Drop for Temp {
@@ -484,22 +450,162 @@ pub fn takes(app: &AppHandle, id: &str) -> Result<BTreeMap<String, cache::Take>>
 mod tests {
     use super::*;
     #[test]
+    fn alternate_provider_import_is_normalized_cached_and_never_accepts_late_results() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let dir = std::env::temp_dir()
+                    .join(format!("speech-interchange-{}", uuid::Uuid::new_v4()));
+                fs::create_dir_all(&dir).unwrap();
+                let mut manifest = narration::Manifest {
+                    speech_provider_id: "fixture-tone".into(),
+                    presenter_id: "tone:440".into(),
+                    pace: 1.0,
+                    ..Default::default()
+                };
+                manifest.slides.insert(
+                    "intro".into(),
+                    narration::SlideNarration {
+                        text: "Hello".into(),
+                        ..Default::default()
+                    },
+                );
+                let doc = narration::save(&dir, manifest, "missing").unwrap();
+                let source = cache::Source::from_manifest(&doc.manifest, "intro").unwrap();
+                let provider: &dyn SpeechProvider = &FixtureProvider;
+                let spool = cache::safe_directory(&dir, "jobs").unwrap().join("job");
+                let cancel = Cancellation::default();
+                let artifact = provider
+                    .synthesize(
+                        source.request(),
+                        &spool,
+                        cancel.clone(),
+                        Arc::new(|_, _, _, _| {}),
+                    )
+                    .await
+                    .unwrap();
+                let take = import_artifact(
+                    &dir,
+                    source.clone(),
+                    &provider.describe(),
+                    &spool,
+                    &artifact,
+                    &cancel,
+                )
+                .unwrap();
+                assert_eq!((take.sample_rate, take.samples), (24000, 24000));
+                assert!(cache::accept(&dir, "intro", &take).unwrap());
+                assert_eq!(cache::find(&dir, &take.key).unwrap().unwrap().id, take.id);
+                assert!(dir.join(format!("audio/{}.wav", take.id)).is_file());
+                // Cancellation and mismatched provenance cannot publish a replacement.
+                let cancelled = Cancellation::default();
+                cancelled.cancel();
+                assert!(import_artifact(
+                    &dir,
+                    source.clone(),
+                    &provider.describe(),
+                    &spool,
+                    &artifact,
+                    &cancelled
+                )
+                .is_err());
+                let invalid = Artifact {
+                    samples: 1,
+                    ..artifact.clone()
+                };
+                assert!(import_artifact(
+                    &dir,
+                    source,
+                    &provider.describe(),
+                    &spool,
+                    &invalid,
+                    &cancel
+                )
+                .is_err());
+                let mut doc = narration::load(&dir).unwrap();
+                doc.manifest.speech_provider_id = "qwen-local".into();
+                narration::save(&dir, doc.manifest, &doc.version).unwrap();
+                assert!(!cache::accept(&dir, "intro", &take).unwrap());
+                assert_eq!(
+                    narration::load(&dir).unwrap().manifest.slides["intro"]
+                        .accepted_take_id
+                        .as_deref(),
+                    Some(take.id.as_str())
+                );
+                assert!(cache::read(&dir, &take.id).unwrap().is_some());
+                fs::remove_dir_all(dir).unwrap();
+            });
+    }
+    #[test]
+    fn rejects_external_and_malformed_artifacts_before_publication() {
+        let dir = std::env::temp_dir().join(format!("speech-artifact-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let spool = dir.join("spool");
+        fs::create_dir(&spool).unwrap();
+        let mut m = narration::Manifest::default();
+        m.slides.insert(
+            "intro".into(),
+            narration::SlideNarration {
+                text: "Hello".into(),
+                ..Default::default()
+            },
+        );
+        let source = cache::Source::from_manifest(&m, "intro").unwrap();
+        let provider = QwenConnector::new(PathBuf::new(), None).describe();
+        let outside = dir.join("outside.wav");
+        fs::write(&outside, cache::encode_wav(&[1, 2, 3])).unwrap();
+        let artifact = Artifact {
+            path: outside,
+            sample_rate: 24000,
+            samples: 3,
+        };
+        assert!(import_artifact(
+            &dir,
+            source.clone(),
+            &provider,
+            &spool,
+            &artifact,
+            &Cancellation::default()
+        )
+        .is_err());
+        let path = spool.join("broken.wav");
+        fs::write(&path, b"broken").unwrap();
+        let artifact = Artifact {
+            path,
+            sample_rate: 24000,
+            samples: 3,
+        };
+        assert!(import_artifact(
+            &dir,
+            source,
+            &provider,
+            &spool,
+            &artifact,
+            &Cancellation::default()
+        )
+        .is_err());
+        assert!(!dir.join("audio").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn only_one_job_runs_and_stale_cancellation_cannot_stop_the_next() {
         let manager = SpeechManager::default();
         let id = uuid::Uuid::new_v4().to_string();
-        let (lease, cancel, signal) = manager
+        let (lease, cancel) = manager
             .begin(id.clone(), "generation", Some("deck".into()), Some(1), 1)
             .unwrap();
         assert!(manager
             .begin(uuid::Uuid::new_v4().to_string(), "setup", None, None, 1)
             .is_err());
         manager.cancel("stale").unwrap();
-        assert!(!cancel.load(Ordering::Relaxed));
+        assert!(cancel.check().is_ok());
         manager.cancel(&id).unwrap();
-        assert!(cancel.load(Ordering::Relaxed));
-        assert!(*signal.borrow());
+        assert!(cancel.check().is_err());
+        assert!(*cancel.receiver().borrow());
         drop(lease);
-        let (_next, next_cancel, _) = manager
+        let (_next, next_cancel) = manager
             .begin(
                 uuid::Uuid::new_v4().to_string(),
                 "generation",
@@ -509,6 +615,6 @@ mod tests {
             )
             .unwrap();
         manager.cancel(&id).unwrap();
-        assert!(!next_cancel.load(Ordering::Relaxed));
+        assert!(next_cancel.check().is_ok());
     }
 }

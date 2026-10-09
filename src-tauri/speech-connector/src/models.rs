@@ -1,5 +1,5 @@
 //! One pinned, verified data-only pack. Downloads/imports stage separately and resume.
-use crate::error::{Error, Result};
+use crate::{Error, Result};
 use fs2::FileExt;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -24,8 +24,7 @@ pub struct PackFile {
     pub sha256: String,
 }
 pub fn pack() -> Pack {
-    serde_json::from_str(include_str!("../../speech-worker/custom-voice-pack.json"))
-        .expect("pinned pack")
+    serde_json::from_str(include_str!("../data/custom-voice-pack.json")).expect("pinned pack")
 }
 pub fn total_bytes() -> u64 {
     pack().files.iter().map(|f| f.bytes).sum()
@@ -40,7 +39,15 @@ pub fn installed(root: &Path) -> bool {
             fs::metadata(dir.join(&f.path)).is_ok_and(|m| m.len() == f.bytes && m.is_file())
         })
 }
-pub fn lock(root: &Path, shared: bool) -> Result<fs::File> {
+// Explicit unlock also releases a lock briefly inherited by a concurrently
+// spawning subprocess; closing only the parent's FD can leave that lock alive.
+pub struct PackLock(fs::File);
+impl Drop for PackLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.0);
+    }
+}
+pub fn lock(root: &Path, shared: bool) -> Result<PackLock> {
     fs::create_dir_all(root)?;
     let file = fs::OpenOptions::new()
         .read(true)
@@ -53,12 +60,16 @@ pub fn lock(root: &Path, shared: bool) -> Result<fs::File> {
     } else {
         FileExt::try_lock_exclusive(&file)
     };
-    result.map_err(|_| {
-        Error::msg(
-            "The speech pack is in use by another SlopSlide window. Try again after it finishes.",
-        )
+    result.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::WouldBlock {
+            Error::msg(
+                "The speech pack is in use by another application. Try again after it finishes.",
+            )
+        } else {
+            Error::msg(format!("Could not lock the speech pack: {e}"))
+        }
     })?;
-    Ok(file)
+    Ok(PackLock(file))
 }
 fn cancelled(cancel: &AtomicBool) -> Result<()> {
     if cancel.load(Ordering::Relaxed) {
@@ -278,6 +289,21 @@ pub fn remove(root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_worker_leases_exclude_pack_mutation_until_all_are_released() {
+        let root = std::env::temp_dir().join(format!("speech-lock-{}", uuid::Uuid::new_v4()));
+        let first = lock(&root, true).unwrap();
+        let second = lock(&root, true).unwrap();
+        assert!(lock(&root, false).is_err());
+        drop(first);
+        assert!(lock(&root, false).is_err());
+        drop(second);
+        let mutation = lock(&root, false).unwrap();
+        assert!(lock(&root, true).is_err());
+        drop(mutation);
+        assert!(lock(&root, true).is_ok());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn resumes_partial_import_and_does_not_publish_cancelled_setup() {
         let root = std::env::temp_dir().join(format!("speech-install-{}", uuid::Uuid::new_v4()));

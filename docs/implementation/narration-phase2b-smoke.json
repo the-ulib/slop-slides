@@ -1,0 +1,21 @@
+{
+  "cancel_after_inference_and_restart": true,
+  "cases": [
+    {
+      "case": "english",
+      "seconds": 11.76,
+      "sha256": "d0771e6412bdb48a0332be0e5b5fad473165af94450b5c2b6bb6488495312791"
+    },
+    {
+      "case": "german",
+      "seconds": 10.237458333333333,
+      "sha256": "47153240b0e142ccf993d41eba1e6b0643936075916eb42331058623de4d4f56"
+    },
+    {
+      "case": "english-paced",
+      "seconds": 11.049166666666666,
+      "sha256": "1f93661a14729caf340a49d6927ec4f582b0bf296a5bf508d8454ccc3918b50c"
+    }
+  ],
+  "standalone_without_tauri": true
+}

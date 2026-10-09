@@ -6,7 +6,7 @@ Proposal — 8 October 2026; PoC, Phase 1 and native Phase 2 acceptance complete
 
 ## Current status and session handoff
 
-Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phase 2 is implemented and passed native preview acceptance; broader installation/device checks remain pending. The new Phase 2b provider refactor and Phase 2c MCP package are planned, not implemented. Phases 3–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
+Last updated: 9 October 2026. **Phase 0 is complete at PoC scope. Phase 1 is implemented and checked. Phase 2 is implemented and passed native preview acceptance; broader installation/device checks remain pending. Phase 2b.1–2b.3 is implemented with unit/standalone model checks passed; native UI reacceptance is pending because the existing library read stalled. Phase 2b.4 ElevenLabs and Phase 2c MCP remain planned. Phases 3–5 have not started.** The user explicitly narrowed the remaining work to a pragmatic proof of concept, not final-product qualification. The earlier status treated broad corpus/device/integrated Store checks as phase-0 blockers; those checks now belong to the relevant implementation/distribution milestones below. They have not been marked as passed.
 
 ### Completed PoC evidence
 
@@ -63,7 +63,7 @@ An 8 GiB Mac was not tested. No full-product quality or Store promise follows fr
 
 ### Resume here in another session
 
-1. Read `CLAUDE.md`, this plan and the reproduction README. **The next work is Phase 2b.1–2b.3:** provider contract/migration, reusable Qwen connector and thin capability-driven UI. Follow the [provider architecture](speech-provider-architecture.md), then Phase 3’s shared timeline, complete narrated preview and native MP4 export. Read [Phase 2 implementation notes](implementation/narration-phase2.md) for the verified setup and playback flow. Keep the outstanding clean-install/device checks before support and distribution claims. Keep local Qwen as the default, explicit opt-in cloud use without paid fallback, right-sidebar layout and saved-presenter semantics. The current UI and backend are still Qwen-specific; the provider abstraction is new work.
+1. Read `CLAUDE.md`, this plan and the reproduction README. **The next feature is Phase 3:** shared timeline, complete narrated preview and native MP4 export. First read the [Phase 2b handoff](implementation/narration-phase2b.md) and complete its pending native UI recheck when the library read recovers. The provider contract, reusable Qwen connector and generic UI are implemented; follow the [provider architecture](speech-provider-architecture.md) for later cloud/MCP steps. Read [Phase 2 implementation notes](implementation/narration-phase2.md) for the verified setup and playback flow. Keep the outstanding clean-install/device checks before support and distribution claims. Keep local Qwen as the default, explicit opt-in cloud use without paid fallback, right-sidebar layout and saved-presenter semantics. Qwen and an opt-in development fixture use the provider abstraction; ElevenLabs and MCP are not implemented.
 2. Use the pinned C/BF16/no-Kleidi configuration as the prototype starting point. The official Python environment and FFmpeg auditions are development tools, not end-user dependencies.
 3. Reuse scratch resources if they still exist and match hashes; `/private/tmp` may be cleared. Rebuild/download from pinned instructions if absent.
 
@@ -158,7 +158,7 @@ Pin the engine revision, model revision, quantization recipe and resource checks
 
 ## Exchangeable speech architecture
 
-**Planned Phase 2b:** keep provider-specific speech code out of React and deck/export orchestration. The [detailed architecture](speech-provider-architecture.md) defines ownership, contract, migration, MCP behavior and acceptance tests.
+**Implemented Phase 2b.1–2b.3:** provider-specific speech code is outside React and deck/export orchestration. See [implementation evidence and remaining native check](implementation/narration-phase2b.md). The [detailed architecture](speech-provider-architecture.md) defines ownership, contract, migration, MCP behavior and acceptance tests.
 
 - The frontend selects provider/presenter and renders capabilities, setup, progress and playback. Voices, model facts, pace ranges and availability come from the backend.
 - SlopSlide owns scripts, revisions, deck jobs, cache, validated audio import and video timing. It stores all accepted recordings in the deck’s visible `audio/` folder.
@@ -166,7 +166,7 @@ Pin the engine revision, model revision, quantization recipe and resource checks
 - A reusable Qwen connector owns pinned models, warm worker, segmentation, conditioning and Sonic pacing. It receives text/settings and returns an artifact; it has no slide/deck/Tauri dependency.
 - A separate optional MCP server wraps the same connector for other apps. SlopSlide’s Generate button calls the backend directly without an LLM/chat roundtrip. The existing private worker protocol is not MCP.
 
-Build the contract, Qwen extraction and a fixture-provider interchange proof before Phase 3. Implement the ElevenLabs API adapter and independently usable MCP package as follow-up steps; paid/live cloud testing needs separate credentials and authorization. Do not claim either is supported yet.
+The contract, Qwen extraction and fixture-provider interchange proof are implemented before Phase 3. Implement the ElevenLabs API adapter and independently usable MCP package as follow-up steps; paid/live cloud testing needs separate credentials and authorization. Do not claim either is supported yet.
 
 ## Data and integration design
 
@@ -202,8 +202,8 @@ Proposed backend modules:
 | Module | Responsibility |
 | --- | --- |
 | `narration.rs` | Manifest, revisions, slide lifecycle and cache metadata |
-| `speech/providers` (planned) | Versioned contract, capability discovery and local/API/MCP adapters |
-| Reusable Qwen connector (planned extraction) | Pack installation/validation, warm worker, segmentation, profiles and Sonic pacing; no Tauri/deck dependency |
+| `speech-connector` crate | Versioned contract and Qwen/fixture implementations; API/MCP adapters remain planned |
+| `speech-connector/src/qwen.rs` | Pack installation/validation, warm worker, segmentation, profiles and Sonic pacing; no Tauri/deck dependency |
 | Optional `speech-mcp` package (planned) | Protocol/tools/resources over the same connector |
 | `speech/voices.rs` | Presenter registry, application default, reference import/recording, transcripts and versioned private profiles |
 | `video/timeline.rs` | Sample-accurate narration intervals and slide boundaries |
@@ -260,7 +260,7 @@ Whole-app Store readiness remains a separate dependency: the current externally 
 | 0b — PoC acceptance | **Complete at PoC scope** | Listening acceptance, resident-model reuse/cancellation, signed CPU sandbox proof and prototype configuration | The narrow PoC questions have evidence. Broader product/device/release checks are explicitly assigned to phases 2–5 above. |
 | 1 — Narration source | **Implemented; checks passed** | Manifest, Chat/Narration tabs in the existing right sidebar, script editing/drafting and lifecycle handling | Old decks load unchanged. Tab switching preserves drafts, edits and running jobs; Review narration opens the correct tab. Chat stays on the right, and only playback controls/status sit below the slide. Reorder/duplicate/delete/undo, external edits, hidden slides and revision conflicts behave correctly. |
 | 2 — Local speech | **Implemented; native preview acceptance passed** | Pack management, worker, stock voices, preview, cache and jobs | Works offline after installation; only changed narration regenerates; interrupted downloads recover; cancel/crash preserves accepted takes and frees worker resources. |
-| 2b — Exchangeable providers | **Planned; 2b.1–2b.3 next** | Contract/migration, reusable Qwen connector, capability-driven UI, fixture-provider proof; ElevenLabs API adapter follows | Legacy takes/cache survive; standalone Qwen consumer works without Tauri; an alternate provider works through the same UI/artifact pipeline. Cloud support requires mocked errors and an authorized live smoke. |
+| 2b — Exchangeable providers | **2b.1–2b.3 implemented/checked; native UI recheck pending. 2b.4 planned** | Contract/migration, reusable Qwen connector, capability-driven UI, fixture-provider proof; ElevenLabs API adapter follows | Legacy takes/cache survive; standalone Qwen consumer works without Tauri; an alternate provider works through the same UI/artifact pipeline. Cloud support requires mocked errors and an authorized live smoke. |
 | 2c — Separate MCP package | **Planned; can follow video PoC** | Tools/job/resource wrapper using the same connector | Actual independent MCP client discovers voices, retrieves audio and cancels/cleans up without SlopSlide. No chat roundtrip is required for app generation. |
 | 3 — Complete video | **Not started** | Frozen render job, timeline, whole-deck preview and Mac MP4 | 10-minute deck exports at 1080p with correct order, no missing assets, no clipped endings and ≤1-frame boundary error. Resize, cancel, disk-full and simultaneous editing tests pass. |
 | 4 — Saved presenters | **Not started** | Base pack, one-time import/record wizard, Presenter picker and Manage presenters | Saved voices survive restart and work across decks without recording again. Default applies only to new decks; each existing deck retains its choice. Renaming preserves audio; replacing references invalidates affected takes. Clone remains recognizable across a full English/German test deck; Qwen references stay local and cloud uploads require an explicit choice; deletion and missing-profile recovery preserve existing audio. |

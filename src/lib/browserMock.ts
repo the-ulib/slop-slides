@@ -72,7 +72,7 @@ export function installBrowserMock() {
           return [];
         case "save_deck_source":
           throw new Error("Saving is not available in the browser preview.");
-        case "speech_status": return { installed: false, runtimeAvailable: false, totalBytes: 2498383610, engineVersion: "preview", job: null };
+        case "speech_status": return { providers: [], job: null };
         case "speech_takes": return {};
         case "load_narration":
           return JSON.parse(localStorage.getItem(`mock-narration-${String(a.id)}`) ?? "null") ?? emptyNarration();

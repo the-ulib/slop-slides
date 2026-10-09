@@ -23,6 +23,12 @@ impl Serialize for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+impl From<speech_connector::Error> for Error {
+    fn from(value: speech_connector::Error) -> Self {
+        Self::msg(value.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

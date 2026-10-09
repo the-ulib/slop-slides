@@ -214,11 +214,12 @@ element still waiting for this.
 
 `narration.json` beside `deck.html` stores spoken scripts, separately from slide HTML. Only create or edit it when requested. Never put narration scripts inside deck.html or change slides while fulfilling a narration-only request. Use the existing stable slide IDs as keys; preserve entries for deleted slides so they can be recovered. Whole-deck drafting excludes hidden slides by default. Respect requested audience, approximate duration, deck language and each slide's language override.
 
-Schema version 1 (English `en` and German `de` only):
+Schema version 2 (version-1 files migrate on the next validated write; English `en` and German `de` only):
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "speechProviderId": "qwen-local",
   "revision": 0,
   "presenterId": "preset:ryan",
   "presenterNameSnapshot": "Ryan",
@@ -238,4 +239,4 @@ Schema version 1 (English `en` and German `de` only):
 }
 ```
 
-Use the SlopSlide MCP tools `read_narration` and `write_narration` for all narration changes. Read the current manifest and its fingerprint first. Pass that fingerprint as `base` when writing. If a write reports a conflict, re-read and preserve the newer edits before retrying. Never bypass this check using raw file writes. Preserve settings and entries outside the requested scope; do not invent voice/take IDs. The write tool validates and atomically replaces the file and increments revision automatically. No extra fields. Preserve presenter and pace settings; pace is a pitch-preserving multiplier between 0.9 and 1.25 (default 1.1), not playback speed. Preserve schemaVersion; if unsupported or corrupt, report the error instead of replacing the file. Scripts must be under 100 KB per slide, pauses integer milliseconds from 0 to 60000, silent duration null or 1–600000 ms. Slide IDs must be stable, not provisional `#N` identifiers. After drafting, set reviewedSlideHash to null for changed scripts; the user reviews them in Narration. Preserve existing acceptedTakeId references until replacement speech succeeds; new entries default to null. Empty scripts represent silence and require an explicit silentDurationMs before future video export. Do not touch `.slopslide` caches, snapshots or personal voice recordings for script drafting.
+Use the SlopSlide MCP tools `read_narration` and `write_narration` for all narration changes. Read the current manifest and its fingerprint first. Pass that fingerprint as `base` when writing. If a write reports a conflict, re-read and preserve the newer edits before retrying. Never bypass this check using raw file writes. Preserve settings and entries outside the requested scope; do not invent voice/take IDs. The write tool validates and atomically replaces the file and increments revision automatically. No extra fields. Preserve speechProviderId, presenter and pace settings. Do not select/upload to another provider while drafting. Pace is a speech multiplier, not playback speed; the schema permits 0.25–4.0 and generation checks the selected provider’s narrower capability limits (local Qwen 0.9–1.25, default 1.1). Preserve schemaVersion; if unsupported or corrupt, report the error instead of replacing the file. Scripts must be under 100 KB per slide, pauses integer milliseconds from 0 to 60000, silent duration null or 1–600000 ms. Slide IDs must be stable, not provisional `#N` identifiers. After drafting, set reviewedSlideHash to null for changed scripts; the user reviews them in Narration. Preserve existing acceptedTakeId references until replacement speech succeeds; new entries default to null. Empty scripts represent silence and require an explicit silentDurationMs before future video export. Do not touch `.slopslide` caches, snapshots or personal voice recordings for script drafting.

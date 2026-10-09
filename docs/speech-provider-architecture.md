@@ -1,12 +1,12 @@
 # Exchangeable speech providers
 
-Architecture proposal — 9 October 2026. Part of the [narrated-video implementation plan](narrated-video-plan.md). **Planned, not implemented.** The existing Phase 2 implementation is a working Qwen-specific PoC. Here “speech” means text-to-speech (TTS); automatic transcription would be a separate capability.
+Architecture proposal — 9 October 2026. Part of the [narrated-video implementation plan](narrated-video-plan.md). **Phase 2b.1–2b.3 implemented; later adapters/MCP remain planned.** See the [implementation handoff and verification limits](implementation/narration-phase2b.md). The code now uses the standalone contract; the sections below also describe later capabilities not yet implemented. Here “speech” means text-to-speech (TTS); automatic transcription would be a separate capability.
 
 ## Decision
 
 Introduce a versioned `SpeechProvider` interface in the backend. Extract the Qwen implementation into a reusable connector with no Tauri, deck or slide dependencies. Keep Qwen local as the default; ElevenLabs and future providers implement the same interface. The frontend presents provider capabilities and job state, rather than implementing provider behavior.
 
-Offer the Qwen connector through a **separate, optional MCP server** for other applications and agents. MCP is a transport/tool interface over the same implementation, not a prerequisite for reuse. SlopSlide's Generate button calls its backend deterministically; it does not ask the chat agent to synthesize speech. The app initially uses the local connector directly. An MCP client adapter can later map a supported server into `SpeechProvider` without changing the editor or export code.
+Offer the Qwen connector through a **separate, optional MCP server** for other applications and agents. MCP is a transport/tool interface over the same implementation, not a prerequisite for reuse. SlopSlide's Generate button calls its backend deterministically; it does not ask the chat agent to synthesize speech. The app uses the local connector directly. An MCP client adapter can later map a supported server into `SpeechProvider` without changing the editor or export code.
 
 Keep the packages in this repository initially. Prove a standalone consumer before extracting a new repository or publishing a package. Avoid building a general plugin marketplace for this PoC.
 
@@ -95,13 +95,13 @@ For a Store build, the local connector remains a bundled, signed helper with pin
 
 | Step | Scope | Exit evidence |
 | --- | --- | --- |
-| **2b.1 — Contract and migration** | Backend interface/DTOs, capabilities, provider identity, schema/cache migration and fixture provider | Legacy deck/takes remain usable; alternate provider can satisfy the contract without Qwen IDs. |
-| **2b.2 — Extract Qwen connector** | Move model/worker/segmentation/Sonic responsibilities behind the contract; standalone CLI consumer with caller-supplied private storage | Existing English/German output and pace remain accepted; warm reuse, cancellation and model integrity pass; consumer works without Tauri or a deck. |
-| **2b.3 — Thin UI and interchange proof** | Provider discovery, generic presenter/setup/job state, backend artifact normalization | Switch Qwen ↔ fixture provider through the same UI; no provider-specific frontend branch is required for voice selection or generation. Native Qwen generate/play/reopen/reuse still works. |
+| **2b.1 — Contract and migration (implemented)** | Backend interface/DTOs, capabilities, provider identity, schema/cache migration and fixture provider | Legacy deck/takes remain usable; alternate provider can satisfy the contract without Qwen IDs. |
+| **2b.2 — Extract Qwen connector (implemented)** | Move model/worker/segmentation/Sonic responsibilities behind the contract; standalone CLI consumer with caller-supplied private storage | Existing English/German output and pace remain accepted; warm reuse, cancellation and model integrity pass; consumer works without Tauri or a deck. |
+| **2b.3 — Thin UI and interchange proof (implemented; native recheck pending)** | Provider discovery, generic presenter/setup/job state, backend artifact normalization | Switch Qwen ↔ fixture provider through the same UI; no provider-specific frontend branch is required for voice selection or generation. Native Qwen generate/play/reopen/reuse still works. |
 | **2b.4 — ElevenLabs adapter** | Official API, OS credential storage, explicit cloud/cost/data indication, decoding/import and mapped errors | Mock HTTP tests pass first. One-slide live test only with supplied credentials and explicit authorization for a potentially paid call; do not advertise support before it passes. |
 | **2c — Reusable MCP package** | Wrapper, documented tools/resources, binary artifact transfer and standalone client example | Real MCP client completes discovery → synthesize → retrieve audio → cancel/cleanup without SlopSlide. External MCP adapter is separate follow-up work. |
 
-**Next work: 2b.1–2b.3 before Phase 3 video integration.** This is the pragmatic minimum to prevent export/UI from depending on Qwen internals. Steps 2b.4 and 2c can follow the local end-to-end video PoC; neither requires a frontend redesign. These are new work, not retroactively completed Phase 2 tasks. Reuse the existing worker and behavior; avoid changing inference quality while extracting it.
+**2b.1–2b.3 are implemented and checked; native UI reacceptance awaits recovery of the existing library read stall. Next feature: Phase 3 video integration.** This is the pragmatic minimum to prevent export/UI from depending on Qwen internals. Steps 2b.4 and 2c can follow the local end-to-end video PoC; neither requires a frontend redesign. The remaining cloud/MCP steps are new work, not retroactively completed Phase 2 tasks. Reuse the existing worker and behavior; avoid changing inference quality while extracting it.
 
 Planned test cases:
 
@@ -113,3 +113,5 @@ Planned test cases:
 6. Native UI covers provider discovery, incompatible/missing presenter, capability-dependent cloning/setup and persistent right-sidebar drafts/playback. Run `./check.sh`; heavy model/live API checks remain explicit opt-in smoke tests.
 
 Remaining qualification is unchanged: clean-machine downloads, baseline hardware, broader voices/long scripts, integrated sandbox/signing, licensing and full-product Store review. Provider interchange adds architecture flexibility, not new evidence that these checks passed.
+
+The implemented v1 interface uses cancellable Rust tasks and completed PCM16 WAV artifacts; SlopSlide supplies job IDs. The polling/voice-profile/cloud-error/MCP-resource portions above are subsequent milestones. Current host normalization supports downmixing and upsampling from ≤24 kHz; unsupported formats fail explicitly until a cloud adapter qualifies its decoder/resampler.

@@ -51,6 +51,8 @@ impl Default for SlideNarration {
 pub struct Manifest {
     pub schema_version: u32,
     pub revision: u64,
+    #[serde(default = "default_provider")]
+    pub speech_provider_id: String,
     #[serde(default = "default_presenter")]
     pub presenter_id: String,
     #[serde(default = "default_presenter_name")]
@@ -60,6 +62,9 @@ pub struct Manifest {
     #[serde(default = "default_pace")]
     pub pace: f64,
     pub slides: BTreeMap<String, SlideNarration>,
+}
+pub fn default_provider() -> String {
+    "qwen-local".into()
 }
 fn default_pace() -> f64 {
     1.1
@@ -73,7 +78,8 @@ fn default_presenter_name() -> String {
 impl Default for Manifest {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: 2,
+            speech_provider_id: default_provider(),
             revision: 0,
             presenter_id: default_presenter(),
             presenter_name_snapshot: default_presenter_name(),
@@ -93,10 +99,20 @@ pub struct Document {
 }
 
 fn validate(m: &Manifest) -> Result<()> {
-    if m.schema_version != 1 {
+    if ![1, 2].contains(&m.schema_version) {
         return Err(Error::msg(
             "Unsupported narration schema; the file was not changed.",
         ));
+    }
+    if m.speech_provider_id.is_empty()
+        || m.speech_provider_id.len() > 128
+        || !m
+            .speech_provider_id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        || (m.schema_version == 1 && m.speech_provider_id != default_provider())
+    {
+        return Err(Error::msg("Invalid speech provider ID."));
     }
     if m.presenter_id.is_empty()
         || m.presenter_id.len() > 256
@@ -104,8 +120,10 @@ fn validate(m: &Manifest) -> Result<()> {
     {
         return Err(Error::msg("Invalid presenter ID."));
     }
-    if !m.pace.is_finite() || !(0.9..=1.25).contains(&m.pace) {
-        return Err(Error::msg("Speaking pace must be between 0.9 and 1.25."));
+    if !m.pace.is_finite() || !(0.25..=4.0).contains(&m.pace) {
+        return Err(Error::msg(
+            "Speaking pace must be between 0.25 and 4.0; generation also checks provider limits.",
+        ));
     }
     if m.slides.len() > 10_000 {
         return Err(Error::msg("Too many narration entries."));
@@ -149,9 +167,10 @@ pub fn load(dir: &Path) -> Result<Document> {
     if raw.len() > 4_000_000 {
         return Err(Error::msg("Narration file exceeds 4 MB."));
     }
-    let manifest: Manifest = serde_json::from_str(&raw)
+    let mut manifest: Manifest = serde_json::from_str(&raw)
         .map_err(|e| Error::msg(format!("Cannot read narration.json: {e}")))?;
     validate(&manifest)?;
+    manifest.schema_version = 2; // In-memory migration; fingerprint still represents the original bytes.
     Ok(Document {
         manifest,
         version: html::content_hash(&raw),
@@ -175,6 +194,7 @@ pub fn save(dir: &Path, mut manifest: Manifest, base: &str) -> Result<Document> 
         return Err(Error::msg("Narration changed on disk. Your edits are kept; review the file version before saving."));
     }
     validate(&manifest)?;
+    manifest.schema_version = 2;
     manifest.revision = current
         .manifest
         .revision
@@ -222,7 +242,7 @@ mod tests {
             serde_json::json!({"schemaVersion":1,"revision":0,"defaultLanguage":"en","slides":{}});
         let mut manifest: Manifest = serde_json::from_value(old).unwrap();
         assert_eq!(manifest.pace, 1.1);
-        for pace in [0.0, 2.0, f64::NAN] {
+        for pace in [0.0, 5.0, f64::NAN] {
             manifest.pace = pace;
             assert!(validate(&manifest).is_err());
         }
@@ -256,6 +276,26 @@ mod tests {
         }
     }
     #[test]
+    fn version_one_migrates_in_memory_without_touching_the_file_or_fingerprint() {
+        let t = Temp::new();
+        let raw = r#"{"schemaVersion":1,"revision":7,"presenterId":"preset:aiden","presenterNameSnapshot":"Aiden","pace":1.2,"slides":{"a":{"text":"Hello","acceptedTakeId":"saved-take"}}}"#;
+        fs::write(t.0.join(FILE), raw).unwrap();
+        let doc = load(&t.0).unwrap();
+        assert_eq!(doc.manifest.schema_version, 2);
+        assert_eq!(doc.manifest.speech_provider_id, "qwen-local");
+        assert_eq!(doc.manifest.presenter_id, "preset:aiden");
+        assert_eq!(doc.manifest.pace, 1.2);
+        assert_eq!(
+            doc.manifest.slides["a"].accepted_take_id.as_deref(),
+            Some("saved-take")
+        );
+        assert_eq!(doc.version, html::content_hash(raw));
+        assert_eq!(fs::read_to_string(t.0.join(FILE)).unwrap(), raw);
+        let saved = save(&t.0, doc.manifest, &doc.version).unwrap();
+        assert_eq!(saved.manifest.revision, 8);
+        assert_eq!(saved.manifest.schema_version, 2);
+    }
+    #[test]
     fn old_decks_load_without_creating_a_file_and_scripts_survive_reopen() {
         let t = Temp::new();
         assert_eq!(load(&t.0).unwrap().version, "missing");
@@ -280,7 +320,7 @@ mod tests {
         let before = fs::read(t.0.join(FILE)).unwrap();
         assert!(save(&t.0, doc.manifest.clone(), "missing").is_err());
         let mut bad = doc.manifest.clone();
-        bad.schema_version = 2;
+        bad.schema_version = 3;
         assert!(save(&t.0, bad, &doc.version).is_err());
         let mut bad = doc.manifest.clone();
         bad.slides.get_mut("a").unwrap().tail_ms = 60_001;
@@ -347,7 +387,7 @@ mod tests {
         let t = Temp::new();
         for raw in [
             "{oops",
-            r#"{"schemaVersion":2,"revision":0,"slides":{}}"#,
+            r#"{"schemaVersion":3,"revision":0,"slides":{}}"#,
             r#"{"schemaVersion":1,"revision":0,"slides":{},"newField":true}"#,
             r#"{"schemaVersion":1,"revision":0,"defaultLanguage":"fr","slides":{}}"#,
         ] {

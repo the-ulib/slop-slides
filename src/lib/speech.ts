@@ -1,13 +1,21 @@
 import type { NarrationLanguage, NarrationManifest, SlideNarration } from "./narration";
-export interface SpeechSource { text: string; language: NarrationLanguage; presenterId: string; pace: number }
+export interface SpeechSource { providerId?: string; text: string; language: NarrationLanguage; presenterId: string; pace: number }
 export interface SpeechTake { id: string; key: string; engineVersion: string; modelRevision: string; source: SpeechSource; samples: number; sampleRate: number; sha256: string }
 export interface SpeechJob { id: string; kind: string; deckId: string | null; sourceRevision: number | null; stage: string; completed: number; total: number; detail: string }
-export interface SpeechStatus { installed: boolean; runtimeAvailable: boolean; totalBytes: number; engineVersion: string; job: SpeechJob | null }
+export interface SpeechProvider {
+  id: string; label: string; contractVersion: number; processing: "local" | "cloud" | "test";
+  engineVersion: string; modelRevision: string; ready: boolean; available: boolean; unavailableReason: string | null;
+  voices: { id: string; name: string }[]; languages: string[];
+  pace: { min: number; max: number; default: number; choices: number[] }; supportsCloning: boolean;
+  setup: { totalBytes: number; detail: string; importTitle: string | null } | null; voiceHint: string | null;
+}
+export interface SpeechStatus { providers: SpeechProvider[]; job: SpeechJob | null }
 export interface SpeechEvent { job: SpeechJob; error: string | null }
 export interface SpeechResult { generated: number; reused: number; superseded: number }
-export const STOCK_VOICES = [
-  ["ryan", "Ryan"], ["aiden", "Aiden"], ["vivian", "Vivian"], ["serena", "Serena"], ["uncle_fu", "Uncle Fu"], ["dylan", "Dylan"], ["eric", "Eric"], ["ono_anna", "Ono Anna"], ["sohee", "Sohee"],
-] as const;
 export function matchesTake(take: SpeechTake, script: SlideNarration, manifest: NarrationManifest): boolean {
-  return take.source.text === script.text.trim().replace(/\r\n/g, "\n") && take.source.language === (script.languageOverride ?? manifest.defaultLanguage) && take.source.presenterId === manifest.presenterId && take.source.pace === (manifest.pace ?? 1.1);
+  return (take.source.providerId ?? "qwen-local") === (manifest.speechProviderId ?? "qwen-local") && take.source.text === script.text.trim().replace(/\r\n/g, "\n") && take.source.language === (script.languageOverride ?? manifest.defaultLanguage) && take.source.presenterId === manifest.presenterId && take.source.pace === (manifest.pace ?? 1.1);
+}
+export function currentTake(take: SpeechTake, script: SlideNarration, manifest: NarrationManifest, providers: SpeechProvider[]): boolean {
+  const provider = providers.find((p) => p.id === (manifest.speechProviderId ?? "qwen-local"));
+  return matchesTake(take, script, manifest) && (!provider || (take.engineVersion === provider.engineVersion && take.modelRevision === provider.modelRevision));
 }

@@ -6,8 +6,9 @@ import { api } from "./lib/api";
 import { useSpeech } from "./speechStore";
 import { useNarration } from "./narrationStore";
 import { emptyNarration } from "./lib/narration";
+import { testSpeechProvider } from "./test/speech";
 import type { SpeechTake } from "./lib/speech";
-const status = { installed: true, runtimeAvailable: true, totalBytes: 2498383610, engineVersion: "v1", job: null };
+const status = { providers: [testSpeechProvider()], job: null };
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; }
 beforeAll(async () => { vi.spyOn(api, "speechStatus").mockResolvedValue(status); await useSpeech.getState().initialize(); });
 beforeEach(() => {

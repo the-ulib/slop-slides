@@ -23,6 +23,18 @@ const current = () => {
   return editedManifest(s.document!.manifest, s.edits, s.languageEdit, s.settingsEdits);
 };
 describe("narration persistence", () => {
+  it("persists provider changes together with presenter settings and preserves old takes", async () => {
+    useNarration.getState().edit("intro", { text: "Hello", acceptedTakeId: "old-take" });
+    useNarration.getState().setProvider("fixture-tone");
+    useNarration.getState().setPresenter("tone:440", "Test tone");
+    useNarration.getState().setPace(1.5);
+    expect(await useNarration.getState().save()).toBe(true);
+    expect(disk.manifest.speechProviderId).toBe("fixture-tone");
+    expect(disk.manifest.presenterId).toBe("tone:440");
+    expect(disk.manifest.pace).toBe(1.5);
+    expect(disk.manifest.slides.intro!.acceptedTakeId).toBe("old-take");
+  });
+
   it("saves presenter and pace and restores them when reopening", async () => {
     useNarration.getState().setPresenter("preset:aiden", "Aiden");
     useNarration.getState().setPace(1.2);

@@ -192,15 +192,17 @@ async fn install_speech_pack(
     manager: State<'_, speech::SpeechManager>,
     job_id: String,
     source: Option<String>,
+    provider_id: String,
 ) -> Result<()> {
-    manager.install(app, job_id, source).await
+    manager.install(app, job_id, provider_id, source).await
 }
 #[tauri::command]
 async fn remove_speech_pack(
     app: AppHandle,
     manager: State<'_, speech::SpeechManager>,
+    provider_id: String,
 ) -> Result<()> {
-    manager.remove(&app).await
+    manager.remove(&app, &provider_id).await
 }
 #[tauri::command]
 async fn generate_speech(

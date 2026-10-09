@@ -1,5 +1,5 @@
-use super::cache::Source;
-use crate::error::{Error, Result};
+use crate::SynthesisRequest;
+use crate::{Error, Result};
 use serde_json::{json, Value};
 use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{
@@ -12,7 +12,7 @@ pub struct Worker {
     child: Child,
     input: ChildStdin,
     lines: Lines<BufReader<ChildStdout>>,
-    _pack_lock: std::fs::File,
+    _pack_lock: super::models::PackLock,
 }
 impl Worker {
     pub async fn start(
@@ -63,13 +63,13 @@ impl Worker {
     }
     pub async fn generate(
         &mut self,
-        source: &Source,
+        source: &SynthesisRequest,
         text: &str,
         output: &Path,
         cancel: &mut watch::Receiver<bool>,
         progress: &(dyn Fn(u64) + Sync),
     ) -> Result<usize> {
-        let request = json!({ "text":text, "speaker":source.speaker()?, "language": if source.language == crate::narration::Language::De { "German" } else { "English" }, "pace":format!("{:.2}", source.pace), "output":output });
+        let request = json!({ "text":text, "speaker":source.voice_id.strip_prefix("preset:").ok_or_else(|| Error::msg("Invalid local voice."))?, "language": if source.language == "de" { "German" } else { "English" }, "pace":format!("{:.2}", source.pace), "output":output });
         let mut bytes = serde_json::to_vec(&request).expect("speech JSON");
         bytes.push(b'\n');
         if bytes.len() > 32767 {
@@ -118,7 +118,7 @@ mod tests {
             std::fs::write(&bin,"#!/bin/sh\necho 'SLOPSPEECH {\"version\":1,\"type\":\"ready\"}'\nwhile read line; do :; done\n").unwrap();
             let mut worker=Worker::start(&bin,&dir,&mut cancel).await.unwrap();
             signal.send(true).unwrap();
-            let source=Source{text:"Hello".into(),language:crate::narration::Language::En,presenter_id:"preset:ryan".into(),pace:1.1};
+            let source=SynthesisRequest{text:"Hello".into(),language:"en".into(),voice_id:"preset:ryan".into(),pace:1.1};
             assert!(worker.generate(&source,"Hello",&dir.join("out.wav"),&mut cancel,&|_|{}).await.is_err());
             worker.stop().await; assert!(worker.child.try_wait().unwrap().is_some()); assert!(!dir.join("out.wav").exists()); std::fs::remove_dir_all(dir).unwrap();
         });

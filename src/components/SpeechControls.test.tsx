@@ -9,6 +9,7 @@ import { useSpeech } from "../speechStore";
 import { emptyNarration, emptyScript } from "../lib/narration";
 import type { SpeechTake } from "../lib/speech";
 import { DECK_HTML, deckFor } from "../test/fixtures";
+import { testSpeechProvider, alternateSpeechProvider } from "../test/speech";
 import { SpeechControls } from "./SpeechControls";
 import { SpeechPlayback } from "./SpeechPlayback";
 const doc = emptyNarration(); doc.manifest.slides.intro = { ...emptyScript(), text: "Welcome" };
@@ -16,7 +17,7 @@ const take: SpeechTake = { id: "recording", key: "key", engineVersion: "v1", mod
 beforeEach(() => {
   useApp.setState({ deck: deckFor(DECK_HTML), selected: "intro" });
   useNarration.setState({ deckId: "talk", document: doc, edits: {}, settingsEdits: {}, languageEdit: null, error: null });
-  useSpeech.setState({ status: { installed: true, runtimeAvailable: true, totalBytes: 2498383610, engineVersion: "v1", job: null }, deckId: "talk", takes: {}, job: null, error: null, message: null });
+  useSpeech.setState({ status: { providers: [testSpeechProvider()], job: null }, deckId: "talk", takes: {}, job: null, error: null, message: null });
   vi.spyOn(useSpeech.getState(), "initialize").mockResolvedValue(); vi.spyOn(useSpeech.getState(), "loadTakes").mockResolvedValue();
 });
 it("offers generation and keeps the current presenter and pace in narration", () => {
@@ -35,9 +36,32 @@ it("shows actual duration and identifies old audio after a script edit", () => {
   act(() => useApp.setState({ selected: "outro" })); expect(screen.queryByLabelText("Narration audio")).toBeNull();
 });
 it("explains setup size and blocks simultaneous generation", () => {
-  useSpeech.setState({ status: { installed: false, runtimeAvailable: true, totalBytes: 2498383610, engineVersion: "v1", job: null } });
+  useSpeech.setState({ status: { providers: [{ ...testSpeechProvider(), ready: false }], job: null } });
   render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={doc.manifest} editable />);
   expect(screen.getByText(/2.50 GB/)).toBeTruthy(); expect(screen.getByText("Download voice pack")).toBeTruthy();
   act(() => useSpeech.setState({ job: { id: "job", kind: "setup", deckId: null, sourceRevision: null, stage: "installing", completed: 1, total: 10, detail: "Installing" } }));
   expect((screen.getByText("Download voice pack") as HTMLButtonElement).disabled).toBe(true); expect(screen.getByText("Cancel")).toBeTruthy();
+});
+
+it("uses alternate provider capabilities and requires an explicit compatible presenter", () => {
+  useSpeech.setState({ status: { providers: [testSpeechProvider(), alternateSpeechProvider()], job: null }, takes: { intro: take } });
+  const choose = vi.spyOn(useNarration.getState(), "setProvider");
+  const view = render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={doc.manifest} editable />);
+  fireEvent.change(screen.getByLabelText("Speech provider"), { target: { value: "fixture-tone" } });
+  expect(choose).toHaveBeenCalledWith("fixture-tone");
+  const switched = { ...doc.manifest, speechProviderId: "fixture-tone" };
+  view.rerender(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={switched} editable />);
+  expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("440 Hz test tone")).toBeTruthy();
+  expect(screen.queryByText("Aiden")).toBeNull();
+  expect(screen.queryByText("Manage voice pack")).toBeNull();
+  view.rerender(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={{ ...switched, presenterId: "tone:440", presenterNameSnapshot: "440 Hz test tone", pace: 1 }} editable />);
+  expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText("2.0×")).toBeTruthy();
+});
+it("keeps accepted audio playable with its provider missing", () => {
+  useSpeech.setState({ status: { providers: [], job: null }, takes: { intro: take } });
+  render(<SpeechPlayback />);
+  expect(screen.getByLabelText("Narration audio")).toBeTruthy();
+  expect(screen.getByText("Speech preview")).toBeTruthy();
 });

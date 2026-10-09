@@ -11,13 +11,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const ENGINE: &str = "qwen-c-ef339be-bf16-cpu-no-kleidi-v1-sonic-b93885d-segments350-seed42";
-pub const SPEAKERS: &[&str] = &[
-    "ryan", "aiden", "vivian", "serena", "uncle_fu", "dylan", "eric", "ono_anna", "sohee",
-];
+pub const ENGINE: &str = speech_connector::QWEN_ENGINE;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
+    #[serde(default = "narration::default_provider")]
+    pub provider_id: String,
     pub text: String,
     pub language: narration::Language,
     pub presenter_id: String,
@@ -34,6 +33,7 @@ impl Source {
             return Err(Error::msg("Write a narration script first."));
         }
         let source = Self {
+            provider_id: manifest.speech_provider_id.clone(),
             text,
             language: script
                 .language_override
@@ -42,30 +42,53 @@ impl Source {
             presenter_id: manifest.presenter_id.clone(),
             pace: manifest.pace,
         };
-        source.speaker()?;
-        if !source.pace.is_finite() || !(0.9..=1.25).contains(&source.pace) {
-            return Err(Error::msg("Speaking pace must be between 0.9 and 1.25."));
-        }
         Ok(source)
     }
-    pub fn speaker(&self) -> Result<&str> {
-        self.presenter_id
-            .strip_prefix("preset:")
-            .filter(|s| SPEAKERS.contains(s))
-            .ok_or_else(|| {
-                Error::msg("Choose a stock presenter. Saved personal voices come in a later phase.")
-            })
+    pub fn request(&self) -> speech_connector::SynthesisRequest {
+        speech_connector::SynthesisRequest {
+            text: self.text.clone(),
+            language: match self.language {
+                narration::Language::De => "de",
+                narration::Language::En => "en",
+            }
+            .into(),
+            voice_id: self.presenter_id.clone(),
+            pace: self.pace,
+        }
     }
+    #[cfg(test)]
     pub fn key(&self) -> String {
-        self.key_for(ENGINE, &super::models::pack().revision)
+        // Only the unchanged pinned local engine is reusable without a descriptor.
+        self.key_for(ENGINE, &speech_connector::models::pack().revision)
     }
-    fn key_for(&self, engine: &str, revision: &str) -> String {
-        format!(
-            "{:x}",
-            Sha256::digest(
-                serde_json::to_vec(&(engine, revision, self)).expect("speech source JSON")
-            )
-        )
+    pub fn key_for(&self, engine: &str, revision: &str) -> String {
+        // Preserve the exact legacy Qwen hash (field order included). Provider
+        // binding is implicit only for that pinned legacy engine/normalization.
+        let identity = if self.provider_id == speech_connector::QWEN_ID && engine == ENGINE {
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Legacy<'a> {
+                text: &'a str,
+                language: &'a narration::Language,
+                presenter_id: &'a str,
+                pace: f64,
+            }
+            serde_json::to_vec(&(
+                engine,
+                revision,
+                Legacy {
+                    text: &self.text,
+                    language: &self.language,
+                    presenter_id: &self.presenter_id,
+                    pace: self.pace,
+                },
+            ))
+            .expect("source JSON")
+        } else {
+            serde_json::to_vec(&(engine, revision, speech_connector::NORMALIZATION, self))
+                .expect("source JSON")
+        };
+        format!("{:x}", Sha256::digest(identity))
     }
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -195,7 +218,22 @@ pub fn find(dir: &Path, key: &str) -> Result<Option<Take>> {
     }
     Ok(None)
 }
+#[cfg(test)]
 pub fn publish(dir: &Path, source: Source, pcm: &[i16]) -> Result<Take> {
+    let provider = speech_connector::QwenConnector::new(PathBuf::new(), None);
+    publish_for(
+        dir,
+        source,
+        pcm,
+        &speech_connector::SpeechProvider::describe(&provider),
+    )
+}
+pub fn publish_for(
+    dir: &Path,
+    source: Source,
+    pcm: &[i16],
+    provider: &speech_connector::Descriptor,
+) -> Result<Take> {
     if pcm.is_empty() || pcm.len() > 600 * 24000 {
         return Err(Error::msg(
             "Recording must be at most ten minutes per slide.",
@@ -207,9 +245,9 @@ pub fn publish(dir: &Path, source: Source, pcm: &[i16]) -> Result<Take> {
     let wav = encode_wav(pcm);
     let take = Take {
         id,
-        key: source.key(),
-        engine_version: ENGINE.into(),
-        model_revision: super::models::pack().revision,
+        key: source.key_for(&provider.engine_version, &provider.model_revision),
+        engine_version: provider.engine_version.clone(),
+        model_revision: provider.model_revision.clone(),
         source,
         samples: pcm.len(),
         sample_rate: 24000,
@@ -227,7 +265,7 @@ pub fn accept(dir: &Path, slide: &str, take: &Take) -> Result<bool> {
     for _ in 0..4 {
         let mut doc = narration::load(dir)?;
         if Source::from_manifest(&doc.manifest, slide)
-            .map(|s| s.key())
+            .map(|s| s.key_for(&take.engine_version, &take.model_revision))
             .ok()
             .as_deref()
             != Some(&take.key)
@@ -246,41 +284,6 @@ pub fn accept(dir: &Path, slide: &str, take: &Take) -> Result<bool> {
     Err(Error::msg(
         "Narration changed while accepting audio. The recording is cached; retry to reuse it.",
     ))
-}
-/// Split at sentence/paragraph boundaries where possible, then whitespace, preserving all text.
-pub fn segments(text: &str) -> Vec<String> {
-    let mut remaining = text.trim();
-    let mut chunks = Vec::new();
-    while !remaining.is_empty() {
-        let end = remaining
-            .char_indices()
-            .nth(350)
-            .map_or(remaining.len(), |(i, _)| i);
-        let prefix = &remaining[..end];
-        let split = if end == remaining.len() {
-            end
-        } else {
-            prefix
-                .char_indices()
-                .filter(|(i, c)| *i > prefix.len() / 3 && matches!(c, '.' | '!' | '?' | '\n'))
-                .map(|(i, c)| i + c.len_utf8())
-                .next_back()
-                .or_else(|| {
-                    prefix
-                        .char_indices()
-                        .filter(|(_, c)| c.is_whitespace())
-                        .map(|(i, _)| i)
-                        .next_back()
-                })
-                .unwrap_or(end)
-        };
-        let (chunk, rest) = remaining.split_at(split);
-        if !chunk.trim().is_empty() {
-            chunks.push(chunk.trim().into());
-        }
-        remaining = rest.trim();
-    }
-    chunks
 }
 pub fn encode_wav(pcm: &[i16]) -> Vec<u8> {
     let bytes = (pcm.len() * 2) as u32;
@@ -358,11 +361,29 @@ mod tests {
     }
     fn source() -> Source {
         Source {
+            provider_id: narration::default_provider(),
             text: "Hello".into(),
             language: narration::Language::En,
             presenter_id: "preset:ryan".into(),
             pace: 1.1,
         }
+    }
+    #[test]
+    fn legacy_qwen_metadata_keeps_its_exact_identity_without_provider_field() {
+        let source = source();
+        let legacy = serde_json::json!({"id":uuid::Uuid::new_v4().to_string(),"key":source.key(),"engineVersion":ENGINE,"modelRevision":speech_connector::models::pack().revision,"source":{"text":"Hello","language":"en","presenterId":"preset:ryan","pace":1.1},"samples":3,"sampleRate":24000,"sha256":"unused"});
+        let take: Take = serde_json::from_value(legacy).unwrap();
+        assert_eq!(take.source.provider_id, "qwen-local");
+        let old_json=format!("[\"{}\",\"{}\",{{\"text\":\"Hello\",\"language\":\"en\",\"presenterId\":\"preset:ryan\",\"pace\":1.1}}]",ENGINE,speech_connector::models::pack().revision);
+        assert_eq!(
+            take.key,
+            format!("{:x}", Sha256::digest(old_json.as_bytes()))
+        );
+        let changed = Source {
+            provider_id: "another-provider".into(),
+            ..source
+        };
+        assert_ne!(changed.key(), take.key);
     }
     #[test]
     fn keys_cover_text_voice_language_pace() {
@@ -388,23 +409,6 @@ mod tests {
         ] {
             assert_ne!(key, changed.key());
         }
-    }
-    #[test]
-    fn segments_preserve_multibyte_text_and_bound_long_words() {
-        let text = ("Grüße. Präsentationen sind schön! ".repeat(45)) + &"ä".repeat(800);
-        let chunks = segments(&text);
-        assert!(chunks.len() > 5);
-        assert!(chunks.iter().all(|s| s.chars().count() <= 350));
-        assert_eq!(
-            chunks
-                .join("")
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect::<String>(),
-            text.chars()
-                .filter(|c| !c.is_whitespace())
-                .collect::<String>()
-        );
     }
     #[test]
     fn wav_round_trip_and_invalid_format() {

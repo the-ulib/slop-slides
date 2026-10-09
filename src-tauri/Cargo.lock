@@ -3770,6 +3770,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "speech-connector",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -3845,6 +3846,20 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "speech-connector"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

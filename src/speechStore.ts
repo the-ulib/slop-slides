@@ -7,14 +7,14 @@ interface SpeechState {
   status: SpeechStatus | null; job: SpeechJob | null; error: string | null; message: string | null;
   deckId: string | null; takes: Record<string, SpeechTake>; cancelling: boolean;
   initialize: () => Promise<void>; refresh: () => Promise<void>; loadTakes: (id: string | null) => Promise<void>;
-  install: (source?: string) => Promise<void>; remove: () => Promise<void>;
+  install: (providerId: string, source?: string) => Promise<void>; remove: (providerId: string) => Promise<void>;
   generate: (id: string, slide: string | null) => Promise<void>; cancel: () => Promise<void>;
 }
 let listening: Promise<void> | undefined;
 let takeRequest = 0;
 const terminal = (job: SpeechJob) => ["complete", "failed"].includes(job.stage);
 function newJob(kind: string, deckId: string | null): SpeechJob {
-  return { id: crypto.randomUUID(), kind, deckId, sourceRevision: null, stage: "starting", completed: 0, total: 0, detail: kind === "setup" ? "Setting up local speech…" : "Preparing narration…" };
+  return { id: crypto.randomUUID(), kind, deckId, sourceRevision: null, stage: "starting", completed: 0, total: 0, detail: kind === "setup" ? "Setting up speech…" : "Preparing narration…" };
 }
 export const useSpeech = create<SpeechState>((set, get) => ({
   status: null, job: null, error: null, message: null, deckId: null, takes: {}, cancelling: false,
@@ -41,17 +41,17 @@ export const useSpeech = create<SpeechState>((set, get) => ({
     try { const takes = await api.speechTakes(deckId); if (run === takeRequest) set({ takes: takes ?? {} }); }
     catch (e) { if (run === takeRequest) set({ error: errorMessage(e) }); }
   },
-  install: async (source) => {
+  install: async (providerId, source) => {
     if (get().job) return;
     const job = newJob("setup", null); set({ job, error: null, message: null, cancelling: false });
-    try { await api.installSpeechPack(job.id, source ?? null); set({ message: "Local speech is ready." }); }
+    try { await api.installSpeechPack(job.id, source ?? null, providerId); set({ message: "Speech provider is ready." }); }
     catch (e) { set({ error: errorMessage(e) }); }
     finally { if (get().job?.id === job.id) set({ job: null, cancelling: false }); await get().refresh(); }
   },
-  remove: async () => {
+  remove: async (providerId) => {
     if (get().job) return;
     const job = newJob("remove", null); set({ job, error: null, message: null });
-    try { await api.removeSpeechPack(); }
+    try { await api.removeSpeechPack(providerId); }
     catch (e) { set({ error: errorMessage(e) }); }
     finally { if (get().job?.id === job.id) set({ job: null }); await get().refresh(); }
   },

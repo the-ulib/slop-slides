@@ -189,12 +189,20 @@ mod tests {
         let doc: Value =
             serde_json::from_str(read["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(doc["version"], "missing");
+        assert_eq!(doc["manifest"]["schemaVersion"], 2);
+        assert_eq!(doc["manifest"]["speechProviderId"], "qwen-local");
         let mut manifest = doc["manifest"].clone();
+        manifest["speechProviderId"] = json!("fixture-tone");
+        manifest["presenterId"] = json!("tone:440");
         manifest["slides"]["intro"] = json!({"text":"Hello"});
         let write = json!({"name": WRITE_NARRATION, "arguments": {"manifest": manifest, "base": "missing"}});
         assert_eq!(
             call(&dir, "tools/call", write.clone())["result"]["isError"],
             false
+        );
+        assert_eq!(
+            narration::load(&dir).unwrap().manifest.speech_provider_id,
+            "fixture-tone"
         );
         let original = std::fs::read(dir.join(narration::FILE)).unwrap();
         assert_eq!(call(&dir, "tools/call", write)["result"]["isError"], true);

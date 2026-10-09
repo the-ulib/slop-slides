@@ -13,6 +13,7 @@ export interface SlideNarration {
 export interface NarrationManifest {
   schemaVersion: number;
   revision: number;
+  speechProviderId?: string;
   presenterId: string;
   presenterNameSnapshot: string;
   defaultLanguage: NarrationLanguage;
@@ -22,14 +23,14 @@ export interface NarrationManifest {
 export interface NarrationDocument { manifest: NarrationManifest; version: string }
 export const emptyNarration = (): NarrationDocument => ({
   version: "missing",
-  manifest: { schemaVersion: 1, revision: 0, presenterId: "preset:ryan", presenterNameSnapshot: "Ryan", defaultLanguage: "en", pace: 1.1, slides: {} },
+  manifest: { schemaVersion: 2, revision: 0, speechProviderId: "qwen-local", presenterId: "preset:ryan", presenterNameSnapshot: "Ryan", defaultLanguage: "en", pace: 1.1, slides: {} },
 });
 export const emptyScript = (): SlideNarration => ({ text: "", languageOverride: null, leadInMs: 250, tailMs: 500, silentDurationMs: null, acceptedTakeId: null, reviewedSlideHash: null });
 export function slideReviewHash(deck: Deck, id: string): string | null {
   const slide = deck.slides.find((s) => s.id === id);
   return slide ? `${deck.shellHash}:${slide.hash}` : null;
 }
-export type NarrationSettings = Partial<Pick<NarrationManifest, "presenterId" | "presenterNameSnapshot" | "pace">>;
+export type NarrationSettings = Partial<Pick<NarrationManifest, "speechProviderId" | "presenterId" | "presenterNameSnapshot" | "pace">>;
 export type NarrationEdits = Record<string, Partial<SlideNarration>>;
 export function editedManifest(base: NarrationManifest, edits: NarrationEdits, language: NarrationLanguage | null, settings: NarrationSettings = {}): NarrationManifest {
   const slides = { ...base.slides };

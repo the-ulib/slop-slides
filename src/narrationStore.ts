@@ -8,6 +8,7 @@ interface NarrationState {
   edits: NarrationEdits;
   languageEdit: NarrationLanguage | null;
   settingsEdits: NarrationSettings;
+  setProvider: (id: string) => void;
   setPresenter: (id: string, name: string) => void;
   setPace: (pace: number) => void;
   saving: boolean;
@@ -78,8 +79,9 @@ export const useNarration = create<NarrationState>((set, get) => ({
     set({ languageEdit });
     if (!get().conflict && !get().error) schedule();
   },
+  setProvider: (id) => { if (!get().document) return; set({ settingsEdits: { ...get().settingsEdits, speechProviderId: id } }); if (!get().conflict && !get().error) schedule(); },
   setPresenter: (id, name) => { set({ settingsEdits: { ...get().settingsEdits, presenterId: id, presenterNameSnapshot: name } }); if (!get().conflict && !get().error) schedule(); },
-  setPace: (pace) => { if (!Number.isFinite(pace) || pace < 0.9 || pace > 1.25) return; set({ settingsEdits: { ...get().settingsEdits, pace } }); if (!get().conflict && !get().error) schedule(); },
+  setPace: (pace) => { if (!Number.isFinite(pace) || pace < 0.25 || pace > 4.0) return; set({ settingsEdits: { ...get().settingsEdits, pace } }); if (!get().conflict && !get().error) schedule(); },
   save: () => {
     clearTimeout(timer);
     const gen = generation;

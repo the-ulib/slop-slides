@@ -7,7 +7,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 if [[ "${1:-}" == "--fix" ]]; then
-  cargo fmt --manifest-path src-tauri/Cargo.toml
+  cargo fmt --all --manifest-path src-tauri/Cargo.toml
 fi
 
 if [[ ! -d node_modules || pnpm-lock.yaml -nt node_modules/.modules.yaml ]]; then
@@ -31,7 +31,7 @@ manifest=src-tauri/Cargo.toml
 run "TypeScript typecheck"  pnpm -s typecheck
 run "Frontend tests"        pnpm -s test
 run "Frontend build"        pnpm -s exec vite build --logLevel warn
-run "Rust format"           cargo fmt --manifest-path "$manifest" --check
+run "Rust format"           cargo fmt --all --manifest-path "$manifest" --check
 run "Rust lint (clippy)"    cargo clippy --manifest-path "$manifest" --all-targets --quiet -- -D warnings
 run "Rust tests"            cargo test --manifest-path "$manifest" --quiet
 

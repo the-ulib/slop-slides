@@ -1,6 +1,8 @@
 //! Lints deck.html: checks that the markup is well formed (every element closed, no stray
 //! end tags) and that it follows the deck format the app and player rely on (see
 //! `prompts/system.md`). Keep these rules in sync whenever the deck structure changes.
+//! Provider settings and narration schema v2 live in narration.json; their validation
+//! belongs to narration.rs, not the HTML format rules below.
 
 use std::collections::HashSet;
 
