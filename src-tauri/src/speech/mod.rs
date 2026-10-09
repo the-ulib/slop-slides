@@ -290,9 +290,10 @@ impl SpeechManager {
         if sources.is_empty() {
             return Err(Error::msg("Write a script for a visible slide first."));
         }
-        let provider = self.provider(&app, &doc.manifest.speech_provider_id)?;
-        let descriptor = provider.describe();
+        // Validate every slide's resolved provider before starting a batch.
         for (_, source) in &sources {
+            let provider = self.provider(&app, &source.provider_id)?;
+            let descriptor = provider.describe();
             descriptor.validate(&source.request())?;
         }
         let total = sources.len() as u64;
@@ -314,6 +315,8 @@ impl SpeechManager {
             };
             for (index, (slide, source)) in sources.iter().enumerate() {
                 cancel.check()?;
+                let provider = self.provider(&app, &source.provider_id)?;
+                let descriptor = provider.describe();
                 let key = source.key_for(&descriptor.engine_version, &descriptor.model_revision);
                 let take = if let Some(take) = cache::find(&dir, &key)? {
                     result.reused += 1;

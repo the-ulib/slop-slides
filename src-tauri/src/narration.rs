@@ -26,6 +26,10 @@ pub enum Language {
 pub struct SlideNarration {
     pub text: String,
     pub language_override: Option<Language>,
+    pub speech_provider_id_override: Option<String>,
+    pub presenter_id_override: Option<String>,
+    pub presenter_name_snapshot_override: Option<String>,
+    pub pace_override: Option<f64>,
     pub lead_in_ms: u32,
     pub tail_ms: u32,
     pub silent_duration_ms: Option<u32>,
@@ -37,6 +41,10 @@ impl Default for SlideNarration {
         Self {
             text: String::new(),
             language_override: None,
+            speech_provider_id_override: None,
+            presenter_id_override: None,
+            presenter_name_snapshot_override: None,
+            pace_override: None,
             lead_in_ms: 250,
             tail_ms: 500,
             silent_duration_ms: None,
@@ -78,7 +86,7 @@ fn default_presenter_name() -> String {
 impl Default for Manifest {
     fn default() -> Self {
         Self {
-            schema_version: 2,
+            schema_version: 3,
             speech_provider_id: default_provider(),
             revision: 0,
             presenter_id: default_presenter(),
@@ -99,7 +107,7 @@ pub struct Document {
 }
 
 fn validate(m: &Manifest) -> Result<()> {
-    if ![1, 2].contains(&m.schema_version) {
+    if ![1, 2, 3].contains(&m.schema_version) {
         return Err(Error::msg(
             "Unsupported narration schema; the file was not changed.",
         ));
@@ -129,6 +137,36 @@ fn validate(m: &Manifest) -> Result<()> {
         return Err(Error::msg("Too many narration entries."));
     }
     for (id, s) in &m.slides {
+        if s.speech_provider_id_override.as_ref().is_some_and(|p| {
+            p.is_empty()
+                || p.len() > 128
+                || !p
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        }) {
+            return Err(Error::msg("Invalid slide speech provider ID."));
+        }
+        if s.presenter_id_override
+            .as_ref()
+            .is_some_and(|p| p.is_empty() || p.len() > 256 || p.contains(['/', '\\']))
+        {
+            return Err(Error::msg("Invalid slide presenter ID."));
+        }
+        if s.pace_override
+            .is_some_and(|p| !p.is_finite() || !(0.25..=4.0).contains(&p))
+        {
+            return Err(Error::msg("Slide speaking pace must be between 0.25 and 4.0; generation also checks provider limits."));
+        }
+        if m.schema_version < 3
+            && (s.speech_provider_id_override.is_some()
+                || s.presenter_id_override.is_some()
+                || s.presenter_name_snapshot_override.is_some()
+                || s.pace_override.is_some())
+        {
+            return Err(Error::msg(
+                "Slide speech overrides require narration schema version 3.",
+            ));
+        }
         if id.is_empty() || id.len() > 256 || id.starts_with('#') || s.text.len() > 100_000 {
             return Err(Error::msg(
                 "Narration needs stable slide IDs and scripts below 100 KB.",
@@ -170,7 +208,7 @@ pub fn load(dir: &Path) -> Result<Document> {
     let mut manifest: Manifest = serde_json::from_str(&raw)
         .map_err(|e| Error::msg(format!("Cannot read narration.json: {e}")))?;
     validate(&manifest)?;
-    manifest.schema_version = 2; // In-memory migration; fingerprint still represents the original bytes.
+    manifest.schema_version = 3; // In-memory migration; fingerprint still represents the original bytes.
     Ok(Document {
         manifest,
         version: html::content_hash(&raw),
@@ -194,7 +232,7 @@ pub fn save(dir: &Path, mut manifest: Manifest, base: &str) -> Result<Document> 
         return Err(Error::msg("Narration changed on disk. Your edits are kept; review the file version before saving."));
     }
     validate(&manifest)?;
-    manifest.schema_version = 2;
+    manifest.schema_version = 3;
     manifest.revision = current
         .manifest
         .revision
@@ -247,6 +285,55 @@ mod tests {
             assert!(validate(&manifest).is_err());
         }
     }
+    #[test]
+    fn slide_overrides_survive_save_reopen_and_duplication_and_validate() {
+        let t = Temp::new();
+        let mut m = Manifest::default();
+        m.slides.insert(
+            "a".into(),
+            SlideNarration {
+                text: "Hello".into(),
+                speech_provider_id_override: Some("fixture-tone".into()),
+                presenter_id_override: Some("tone:440".into()),
+                presenter_name_snapshot_override: Some("Test tone".into()),
+                pace_override: Some(1.5),
+                accepted_take_id: Some("saved-take".into()),
+                ..Default::default()
+            },
+        );
+        let saved = save(&t.0, m.clone(), "missing").unwrap();
+        assert_eq!(load(&t.0).unwrap().manifest, saved.manifest);
+        duplicate(&t.0, "a", "b", "hash", "new-hash").unwrap();
+        let loaded = load(&t.0).unwrap().manifest;
+        assert_eq!(loaded.slides["a"], loaded.slides["b"]);
+        assert_eq!(loaded.presenter_id, "preset:ryan");
+        for invalid in [0.0, 5.0, f64::NAN] {
+            m.slides.get_mut("a").unwrap().pace_override = Some(invalid);
+            assert!(validate(&m).is_err());
+        }
+        m.slides.get_mut("a").unwrap().pace_override = None;
+        m.slides.get_mut("a").unwrap().speech_provider_id_override = Some("../bad".into());
+        assert!(validate(&m).is_err());
+        m.slides.get_mut("a").unwrap().speech_provider_id_override = None;
+        m.slides.get_mut("a").unwrap().presenter_id_override = Some("../bad".into());
+        assert!(validate(&m).is_err());
+    }
+    #[test]
+    fn version_two_migration_preserves_inheritance_take_and_original_bytes() {
+        let t = Temp::new();
+        let raw = r#"{"schemaVersion":2,"revision":7,"speechProviderId":"qwen-local","presenterId":"preset:aiden","pace":1.2,"slides":{"a":{"text":"Hello","acceptedTakeId":"saved-take"}}}"#;
+        fs::write(t.0.join(FILE), raw).unwrap();
+        let doc = load(&t.0).unwrap();
+        assert_eq!(doc.manifest.schema_version, 3);
+        assert_eq!(doc.manifest.slides["a"].pace_override, None);
+        assert_eq!(doc.manifest.slides["a"].presenter_id_override, None);
+        assert_eq!(
+            doc.manifest.slides["a"].accepted_take_id.as_deref(),
+            Some("saved-take")
+        );
+        assert_eq!(doc.version, html::content_hash(raw));
+        assert_eq!(fs::read_to_string(t.0.join(FILE)).unwrap(), raw);
+    }
     struct Temp(std::path::PathBuf);
     impl Temp {
         fn new() -> Self {
@@ -281,7 +368,7 @@ mod tests {
         let raw = r#"{"schemaVersion":1,"revision":7,"presenterId":"preset:aiden","presenterNameSnapshot":"Aiden","pace":1.2,"slides":{"a":{"text":"Hello","acceptedTakeId":"saved-take"}}}"#;
         fs::write(t.0.join(FILE), raw).unwrap();
         let doc = load(&t.0).unwrap();
-        assert_eq!(doc.manifest.schema_version, 2);
+        assert_eq!(doc.manifest.schema_version, 3);
         assert_eq!(doc.manifest.speech_provider_id, "qwen-local");
         assert_eq!(doc.manifest.presenter_id, "preset:aiden");
         assert_eq!(doc.manifest.pace, 1.2);
@@ -293,7 +380,7 @@ mod tests {
         assert_eq!(fs::read_to_string(t.0.join(FILE)).unwrap(), raw);
         let saved = save(&t.0, doc.manifest, &doc.version).unwrap();
         assert_eq!(saved.manifest.revision, 8);
-        assert_eq!(saved.manifest.schema_version, 2);
+        assert_eq!(saved.manifest.schema_version, 3);
     }
     #[test]
     fn old_decks_load_without_creating_a_file_and_scripts_survive_reopen() {
@@ -320,7 +407,7 @@ mod tests {
         let before = fs::read(t.0.join(FILE)).unwrap();
         assert!(save(&t.0, doc.manifest.clone(), "missing").is_err());
         let mut bad = doc.manifest.clone();
-        bad.schema_version = 3;
+        bad.schema_version = 4;
         assert!(save(&t.0, bad, &doc.version).is_err());
         let mut bad = doc.manifest.clone();
         bad.slides.get_mut("a").unwrap().tail_ms = 60_001;
@@ -387,7 +474,7 @@ mod tests {
         let t = Temp::new();
         for raw in [
             "{oops",
-            r#"{"schemaVersion":3,"revision":0,"slides":{}}"#,
+            r#"{"schemaVersion":4,"revision":0,"slides":{}}"#,
             r#"{"schemaVersion":1,"revision":0,"slides":{},"newField":true}"#,
             r#"{"schemaVersion":1,"revision":0,"defaultLanguage":"fr","slides":{}}"#,
         ] {

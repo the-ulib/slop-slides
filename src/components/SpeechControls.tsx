@@ -2,44 +2,60 @@ import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useNarration } from "../narrationStore";
 import { useSpeech } from "../speechStore";
-import { emptyScript, type NarrationManifest } from "../lib/narration";
-import { currentTake } from "../lib/speech";
+import { emptyScript, slideSpeechSettings, type SlideNarration, type NarrationManifest } from "../lib/narration";
+import { currentTake, matchesTake } from "../lib/speech";
 import type { Deck } from "../lib/api";
 const field = "w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs disabled:opacity-40";
 export function SpeechControls({ deck, selected, manifest, editable }: { deck: Deck; selected: string | null; manifest: NarrationManifest | null; editable: boolean }) {
   const speech = useSpeech(); const narration = useNarration();
+  const [settingsScope, setSettingsScope] = useState<"slide" | "deck">("slide");
   const [scope, setScope] = useState<"slide" | "deck">("slide");
+  useEffect(() => { setSettingsScope("slide"); }, [deck.id, selected]);
   useEffect(() => { void useSpeech.getState().initialize(); }, []);
   useEffect(() => { void useSpeech.getState().loadTakes(deck.id); }, [deck.id, narration.document?.version]);
   const providers = speech.status?.providers ?? [];
-  const providerId = manifest?.speechProviderId ?? "qwen-local";
-  const provider = providers.find((p) => p.id === providerId);
   const take = selected && speech.deckId === deck.id ? speech.takes[selected] : undefined;
   const script = selected && manifest ? manifest.slides[selected] ?? emptyScript() : emptyScript();
+  const resolved = manifest ? slideSpeechSettings(manifest, script) : { speechProviderId: "qwen-local", presenterId: "preset:ryan", presenterNameSnapshot: "Ryan", pace: 1.1 };
+  const settings = settingsScope === "slide" ? resolved : { speechProviderId: manifest?.speechProviderId ?? "qwen-local", presenterId: manifest?.presenterId ?? "preset:ryan", presenterNameSnapshot: manifest?.presenterNameSnapshot ?? "Ryan", pace: manifest?.pace ?? 1.1 };
+  const providerId = settings.speechProviderId;
+  const provider = providers.find((p) => p.id === providerId);
+  const editSpeech = (patch: Partial<SlideNarration>) => {
+    if (!selected || !editable) return;
+    // Pin the provider/voice/pace together so changing deck defaults later cannot
+    // change the meaning of an explicit slide voice selection.
+    narration.edit(selected, { speechProviderIdOverride: resolved.speechProviderId, presenterIdOverride: resolved.presenterId, presenterNameSnapshotOverride: resolved.presenterNameSnapshot, paceOverride: resolved.pace, ...patch });
+  };
+  const overridden = script.speechProviderIdOverride != null || script.presenterIdOverride != null || script.paceOverride != null;
   const current = take && manifest && currentTake(take, script, manifest, providers);
   const busy = !!speech.job;
-  const compatibleVoice = provider?.voices.some((v) => v.id === manifest?.presenterId);
+  const compatibleVoice = provider?.voices.some((v) => v.id === settings.presenterId);
   const compatibleLanguage = provider?.languages.includes(script.languageOverride ?? manifest?.defaultLanguage ?? "en");
-  const compatiblePace = provider && manifest && (manifest.pace ?? provider.pace.default) >= provider.pace.min && (manifest.pace ?? provider.pace.default) <= provider.pace.max;
+  const compatiblePace = provider && manifest && settings.pace >= provider.pace.min && settings.pace <= provider.pace.max;
   return <div className="mt-4 border-t border-border pt-4">
     <div className="mb-2 font-medium">Speech</div>
+    <label className="mb-3 block text-muted-foreground">Settings apply to
+      <select aria-label="Speech settings scope" className={`${field} mt-1 text-foreground`} value={settingsScope} disabled={busy} onChange={(e) => setSettingsScope(e.target.value as "slide" | "deck")}><option value="slide">This slide</option><option value="deck">Deck defaults</option></select>
+    </label>
+    <p className="mb-3 text-[11px] text-muted-foreground">{settingsScope === "deck" ? "Changes affect slides using deck defaults; their audio may need regeneration." : overridden ? "Settings saved for this slide. Other slides keep their settings." : "Using deck defaults. Changes here apply only to this slide."}</p>
+    {settingsScope === "slide" && overridden && <button disabled={!editable || busy} className="mb-3 underline disabled:opacity-40" onClick={() => narration.edit(selected!, { speechProviderIdOverride: null, presenterIdOverride: null, presenterNameSnapshotOverride: null, paceOverride: null })}>Use deck defaults</button>}
     <label className="block text-muted-foreground">Speech provider
-      <select aria-label="Speech provider" className={`${field} mt-1 text-foreground`} value={providerId} disabled={!manifest || busy || !providers.length} onChange={(e) => narration.setProvider(e.target.value)}>
+      <select aria-label="Speech provider" className={`${field} mt-1 text-foreground`} value={providerId} disabled={!manifest || busy || !providers.length || (settingsScope === "slide" && !editable)} onChange={(e) => settingsScope === "deck" ? narration.setProvider(e.target.value) : editSpeech({ speechProviderIdOverride: e.target.value })}>
         {!provider && <option value={providerId}>{providerId} · unavailable</option>}
         {providers.map((p) => <option key={p.id} value={p.id}>{p.label} · {p.processing === "local" ? "On device" : p.processing === "cloud" ? "Cloud" : "Test"}</option>)}
       </select>
     </label>
     {!speech.status ? <p className="mt-3 text-muted-foreground">Checking speech providers…</p> : !provider?.available ? <p className="mt-3 text-muted-foreground">{provider?.unavailableReason ?? "This deck’s provider is unavailable. Choose another provider to generate speech. Saved recordings remain playable."}</p> : <>
       <label className="mt-3 block text-muted-foreground">Presenter
-        <select aria-label="Narration presenter" className={`${field} mt-1 text-foreground`} value={manifest?.presenterId ?? ""} disabled={!manifest || busy} onChange={(e) => { const voice = provider.voices.find((v) => v.id === e.target.value); if (voice) narration.setPresenter(voice.id, voice.name); }}>
-          {!compatibleVoice && <option value={manifest?.presenterId ?? ""}>{manifest?.presenterNameSnapshot ?? "Choose presenter"} · choose compatible presenter</option>}
+        <select aria-label="Narration presenter" className={`${field} mt-1 text-foreground`} value={settings.presenterId ?? ""} disabled={!manifest || busy || (settingsScope === "slide" && !editable)} onChange={(e) => { const voice = provider.voices.find((v) => v.id === e.target.value); if (voice) { if (settingsScope === "deck") narration.setPresenter(voice.id, voice.name); else editSpeech({ presenterIdOverride: voice.id, presenterNameSnapshotOverride: voice.name }); } }}>
+          {!compatibleVoice && <option value={settings.presenterId ?? ""}>{settings.presenterNameSnapshot ?? "Choose presenter"} · choose compatible presenter</option>}
           {provider.voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
         </select>
       </label>
       {provider.voiceHint && <p className="mt-1 text-[11px] text-muted-foreground">{provider.voiceHint}</p>}
       <label className="mt-3 block text-muted-foreground">Speaking pace
-        <select aria-label="Narration pace" className={`${field} mt-1 text-foreground`} value={manifest?.pace ?? provider.pace.default} disabled={!manifest || busy} onChange={(e) => narration.setPace(Number(e.target.value))}>
-          {!provider.pace.choices.includes(manifest?.pace ?? provider.pace.default) && <option value={manifest?.pace ?? provider.pace.default}>{manifest?.pace ?? provider.pace.default}×{compatiblePace ? "" : " · unsupported"}</option>}
+        <select aria-label="Narration pace" className={`${field} mt-1 text-foreground`} value={settings.pace} disabled={!manifest || busy || (settingsScope === "slide" && !editable)} onChange={(e) => settingsScope === "deck" ? narration.setPace(Number(e.target.value)) : editSpeech({ paceOverride: Number(e.target.value) })}>
+          {!provider.pace.choices.includes(settings.pace) && <option value={settings.pace}>{settings.pace}×{compatiblePace ? "" : " · unsupported"}</option>}
           {provider.pace.choices.map((pace) => <option key={pace} value={pace}>{pace.toFixed(1)}×{pace === provider.pace.default ? " · Default" : ""}</option>)}
         </select>
       </label>
@@ -55,6 +71,10 @@ export function SpeechControls({ deck, selected, manifest, editable }: { deck: D
         {provider.setup && <details className="mt-3 text-muted-foreground"><summary className="cursor-pointer">Manage voice pack</summary><p className="mt-2">Removing the pack frees {(provider.setup.totalBytes / 1e9).toFixed(2)} GB. Saved recordings remain playable.</p><button className="mt-2 underline disabled:opacity-40" disabled={busy} onClick={() => void speech.remove(provider.id)}>Remove voice pack</button></details>}
       </> : <p className="mt-3 text-muted-foreground">Configure this provider before generating speech.</p>}
     </>}
+    {take && manifest && !matchesTake(take, script, manifest) && take.source.text === script.text.trim().replace(/\r\n/g, "\n") && <button disabled={!editable || busy} className="mt-2 underline disabled:opacity-40" onClick={() => {
+      const voice = providers.find((p) => p.id === (take.source.providerId ?? "qwen-local"))?.voices.find((v) => v.id === take.source.presenterId);
+      editSpeech({ speechProviderIdOverride: take.source.providerId ?? "qwen-local", presenterIdOverride: take.source.presenterId, presenterNameSnapshotOverride: voice?.name ?? take.source.presenterId, paceOverride: take.source.pace, languageOverride: take.source.language });
+    }}>Restore recording settings</button>}
     {take && <p className="mt-2 text-muted-foreground">{current ? "Recording ready" : "Previous recording · script or voice settings changed"} · {(take.samples / take.sampleRate).toFixed(1)}s. Play below the slide. Saved in this deck’s audio folder.</p>}
     {speech.job && <div className="mt-3 rounded-md bg-accent p-2" role="status">
       <p>{speech.job.detail}</p>

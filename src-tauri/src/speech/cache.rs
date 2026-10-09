@@ -33,14 +33,22 @@ impl Source {
             return Err(Error::msg("Write a narration script first."));
         }
         let source = Self {
-            provider_id: manifest.speech_provider_id.clone(),
+            provider_id: script
+                .speech_provider_id_override
+                .as_ref()
+                .unwrap_or(&manifest.speech_provider_id)
+                .clone(),
             text,
             language: script
                 .language_override
                 .clone()
                 .unwrap_or_else(|| manifest.default_language.clone()),
-            presenter_id: manifest.presenter_id.clone(),
-            pace: manifest.pace,
+            presenter_id: script
+                .presenter_id_override
+                .as_ref()
+                .unwrap_or(&manifest.presenter_id)
+                .clone(),
+            pace: script.pace_override.unwrap_or(manifest.pace),
         };
         Ok(source)
     }

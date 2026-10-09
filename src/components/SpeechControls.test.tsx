@@ -20,12 +20,13 @@ beforeEach(() => {
   useSpeech.setState({ status: { providers: [testSpeechProvider()], job: null }, deckId: "talk", takes: {}, job: null, error: null, message: null });
   vi.spyOn(useSpeech.getState(), "initialize").mockResolvedValue(); vi.spyOn(useSpeech.getState(), "loadTakes").mockResolvedValue();
 });
-it("offers generation and keeps the current presenter and pace in narration", () => {
-  const presenter = vi.spyOn(useNarration.getState(), "setPresenter"); const pace = vi.spyOn(useNarration.getState(), "setPace");
+it("applies presenter and pace to this slide without changing deck defaults", () => {
+  const edit = vi.spyOn(useNarration.getState(), "edit");
   const generate = vi.spyOn(useSpeech.getState(), "generate").mockResolvedValue();
   render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={doc.manifest} editable />);
-  fireEvent.change(screen.getByLabelText("Narration presenter"), { target: { value: "preset:aiden" } }); expect(presenter).toHaveBeenCalledWith("preset:aiden", "Aiden");
-  fireEvent.change(screen.getByLabelText("Narration pace"), { target: { value: "1.2" } }); expect(pace).toHaveBeenCalledWith(1.2);
+  fireEvent.change(screen.getByLabelText("Narration presenter"), { target: { value: "preset:aiden" } }); expect(edit).toHaveBeenCalledWith("intro", expect.objectContaining({ presenterIdOverride: "preset:aiden", presenterNameSnapshotOverride: "Aiden", speechProviderIdOverride: "qwen-local" }));
+  fireEvent.change(screen.getByLabelText("Narration pace"), { target: { value: "1.2" } }); expect(edit).toHaveBeenCalledWith("intro", expect.objectContaining({ paceOverride: 1.2 }));
+  expect(useNarration.getState().settingsEdits).toEqual({});
   fireEvent.click(screen.getByText("Generate audio")); expect(generate).toHaveBeenCalledWith("talk", "intro");
 });
 it("shows actual duration and identifies old audio after a script edit", () => {
@@ -45,17 +46,17 @@ it("explains setup size and blocks simultaneous generation", () => {
 
 it("uses alternate provider capabilities and requires an explicit compatible presenter", () => {
   useSpeech.setState({ status: { providers: [testSpeechProvider(), alternateSpeechProvider()], job: null }, takes: { intro: take } });
-  const choose = vi.spyOn(useNarration.getState(), "setProvider");
+  const choose = vi.spyOn(useNarration.getState(), "edit");
   const view = render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={doc.manifest} editable />);
   fireEvent.change(screen.getByLabelText("Speech provider"), { target: { value: "fixture-tone" } });
-  expect(choose).toHaveBeenCalledWith("fixture-tone");
-  const switched = { ...doc.manifest, speechProviderId: "fixture-tone" };
+  expect(choose).toHaveBeenCalledWith("intro", expect.objectContaining({ speechProviderIdOverride: "fixture-tone" }));
+  const switched = { ...doc.manifest, slides: { ...doc.manifest.slides, intro: { ...doc.manifest.slides.intro!, speechProviderIdOverride: "fixture-tone" } } };
   view.rerender(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={switched} editable />);
   expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText("440 Hz test tone")).toBeTruthy();
   expect(screen.queryByText("Aiden")).toBeNull();
   expect(screen.queryByText("Manage voice pack")).toBeNull();
-  view.rerender(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={{ ...switched, presenterId: "tone:440", presenterNameSnapshot: "440 Hz test tone", pace: 1 }} editable />);
+  view.rerender(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={{ ...switched, slides: { ...switched.slides, intro: { ...switched.slides.intro!, presenterIdOverride: "tone:440", presenterNameSnapshotOverride: "440 Hz test tone", paceOverride: 1 } } }} editable />);
   expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(false);
   expect(screen.getByText("2.0×")).toBeTruthy();
 });
@@ -64,4 +65,32 @@ it("keeps accepted audio playable with its provider missing", () => {
   render(<SpeechPlayback />);
   expect(screen.getByLabelText("Narration audio")).toBeTruthy();
   expect(screen.getByText("Speech preview")).toBeTruthy();
+});
+
+it("offers explicit deck defaults and returns to slide scope on navigation", () => {
+  const view = render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={doc.manifest} editable />);
+  fireEvent.change(screen.getByLabelText("Speech settings scope"), { target: { value: "deck" } });
+  fireEvent.change(screen.getByLabelText("Narration pace"), { target: { value: "1.2" } });
+  expect(useNarration.getState().settingsEdits.pace).toBe(1.2);
+  expect(screen.getByText(/Changes affect slides using deck defaults/)).toBeTruthy();
+  view.rerender(<SpeechControls deck={deckFor(DECK_HTML)} selected="outro" manifest={doc.manifest} editable />);
+  expect((screen.getByLabelText("Speech settings scope") as HTMLSelectElement).value).toBe("slide");
+});
+it("restores the accepted recording's settings without replacing its script or take", () => {
+  useSpeech.setState({ takes: { intro: take } });
+  const changed = { ...doc.manifest, pace: 1.2, presenterId: "preset:aiden" };
+  const view = render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={changed} editable />);
+  fireEvent.click(screen.getByText("Restore recording settings"));
+  expect(useNarration.getState().edits.intro).toMatchObject({ paceOverride: 1.1, presenterIdOverride: "preset:ryan", languageOverride: "en" });
+  expect(useNarration.getState().edits.intro).not.toHaveProperty("text");
+  expect(useNarration.getState().edits.intro).not.toHaveProperty("acceptedTakeId");
+  view.rerender(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={{ ...changed, slides: { intro: { ...doc.manifest.slides.intro!, text: "Different words" } } }} editable />);
+  expect(screen.queryByText("Restore recording settings")).toBeNull();
+});
+it("clears explicit slide settings to inherit defaults again", () => {
+  const manifest = { ...doc.manifest, slides: { intro: { ...doc.manifest.slides.intro!, presenterIdOverride: "preset:aiden", paceOverride: 1.2 } } };
+  render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={manifest} editable />);
+  expect((screen.getByLabelText("Narration presenter") as HTMLSelectElement).value).toBe("preset:aiden");
+  fireEvent.click(screen.getByText("Use deck defaults"));
+  expect(useNarration.getState().edits.intro).toMatchObject({ speechProviderIdOverride: null, presenterIdOverride: null, paceOverride: null });
 });

@@ -26,6 +26,6 @@ describe("narration draft requests", () => {
     deck.shellHash = "new-css";
     expect(slideReviewHash(deck, "intro")).not.toBe(before);
     expect(slideReviewHash(deck, "deleted")).toBeNull();
-    expect(emptyNarration().manifest.schemaVersion).toBe(2);
+    expect(emptyNarration().manifest.schemaVersion).toBe(3);
   });
 });

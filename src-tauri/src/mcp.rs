@@ -189,7 +189,7 @@ mod tests {
         let doc: Value =
             serde_json::from_str(read["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
         assert_eq!(doc["version"], "missing");
-        assert_eq!(doc["manifest"]["schemaVersion"], 2);
+        assert_eq!(doc["manifest"]["schemaVersion"], 3);
         assert_eq!(doc["manifest"]["speechProviderId"], "qwen-local");
         let mut manifest = doc["manifest"].clone();
         manifest["speechProviderId"] = json!("fixture-tone");

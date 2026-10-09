@@ -23,6 +23,15 @@ const current = () => {
   return editedManifest(s.document!.manifest, s.edits, s.languageEdit, s.settingsEdits);
 };
 describe("narration persistence", () => {
+  it("saves distinct slide voices/pace across reopening and keeps defaults and takes", async () => {
+    useNarration.getState().edit("intro", { text: "Hello", acceptedTakeId: "existing-take" });
+    useNarration.getState().edit("outro", { text: "Bye", speechProviderIdOverride: "qwen-local", presenterIdOverride: "preset:aiden", presenterNameSnapshotOverride: "Aiden", paceOverride: 1.2 });
+    await useNarration.getState().save();
+    await useNarration.getState().load("talk");
+    expect(current().slides.outro).toMatchObject({ presenterIdOverride: "preset:aiden", paceOverride: 1.2 });
+    expect(current().slides.intro).toMatchObject({ acceptedTakeId: "existing-take", presenterIdOverride: null, paceOverride: null });
+    expect(current()).toMatchObject({ presenterId: "preset:ryan", pace: 1.1 });
+  });
   it("persists provider changes together with presenter settings and preserves old takes", async () => {
     useNarration.getState().edit("intro", { text: "Hello", acceptedTakeId: "old-take" });
     useNarration.getState().setProvider("fixture-tone");

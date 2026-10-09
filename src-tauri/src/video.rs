@@ -122,10 +122,13 @@ pub fn timeline(
                 issues.push(format!("{label}: generate narration audio first."));
                 continue;
             };
-            if take.source != cache::Source::from_manifest(manifest, id)? {
-                issues.push(format!(
-                    "{label}: the script or voice settings changed; regenerate its audio."
-                ));
+            let expected = cache::Source::from_manifest(manifest, id)?;
+            if take.source != expected {
+                issues.push(if take.source.text != expected.text {
+                    format!("{label}: the script changed; regenerate its audio.")
+                } else {
+                    format!("{label}: speech settings changed. Restore recording settings in Narration or regenerate its audio.")
+                });
                 continue;
             }
             let lead = u64::from(script.lead_in_ms) * RATE / 1000;
@@ -743,6 +746,51 @@ mod tests {
         assert!(pcm[44401..56404].iter().all(|s| *s == -2345));
         assert!(pcm[56404..].iter().all(|s| *s == 0));
         assert_eq!(pcm.len() as u64, t.total_samples);
+    }
+    #[test]
+    fn slide_voice_changes_keep_other_recordings_exportable_and_restoration_reuses_audio() {
+        let dir = Temp::new();
+        let root = Temp::new();
+        let mut m = silent(&["a", "b"], 1000);
+        let a = spoken(&dir.0, &mut m, "a", &[1234; 24000]);
+        spoken(&dir.0, &mut m, "b", &[2345; 12000]);
+        let b = m.slides.get_mut("b").unwrap();
+        b.speech_provider_id_override = Some("fixture-tone".into());
+        b.presenter_id_override = Some("tone:440".into());
+        b.pace_override = Some(1.5);
+        assert_eq!(cache::Source::from_manifest(&m, "a").unwrap(), a.source);
+        assert!(timeline(&html(&["a", "b"]), &m, &dir.0, "job", "deck")
+            .unwrap_err()
+            .to_string()
+            .contains("Slide 2"));
+        let take_b = cache::publish_for(
+            &dir.0,
+            cache::Source::from_manifest(&m, "b").unwrap(),
+            &[-2345; 12000],
+            &speech_connector::FixtureProvider.describe(),
+        )
+        .unwrap();
+        m.slides.get_mut("b").unwrap().accepted_take_id = Some(take_b.id.clone());
+        save(&dir.0, &html(&["a", "b"]), &m);
+        let t = freeze(&dir.0, &root.0, "job", "deck", &AtomicBool::new(false)).unwrap();
+        assert_eq!(t.slides[0].take_id.as_deref(), Some(a.id.as_str()));
+        assert_eq!(t.slides[1].take_id.as_deref(), Some(take_b.id.as_str()));
+        let pcm = cache::decode_wav(&fs::read(root.0.join("timeline.wav")).unwrap()).unwrap();
+        assert!(pcm[6000..30000].iter().all(|s| *s == 1234));
+        // A deliberate deck-default edit can invalidate inherited A. Restoring
+        // its recorded settings pins A and reuses its original immutable WAV.
+        m.pace = 1.2;
+        m.presenter_id = "preset:aiden".into();
+        assert!(timeline(&html(&["a", "b"]), &m, &dir.0, "job", "deck").is_err());
+        let s = m.slides.get_mut("a").unwrap();
+        s.pace_override = Some(a.source.pace);
+        s.presenter_id_override = Some(a.source.presenter_id.clone());
+        s.speech_provider_id_override = Some(a.source.provider_id.clone());
+        assert!(timeline(&html(&["a", "b"]), &m, &dir.0, "job", "deck").is_ok());
+        assert_eq!(
+            cache::read(&dir.0, &a.id).unwrap().unwrap().sha256,
+            a.sha256
+        );
     }
     #[test]
     fn prepared_copy_survives_simultaneous_source_edits() {
