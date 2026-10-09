@@ -29,6 +29,20 @@ export function slideUrl(deckId: string, slideId: string, version: string, still
   return deckFileUrl(deckId, "deck.html", query);
 }
 
+/** First path segment the backend serves templates under (see src-tauri/src/protocol.rs). */
+const TEMPLATE_PREFIX = ".template";
+
+/** One slide of a template, as a still preview (final animation frame). */
+export function templateSlideUrl(templateId: string, slideId: string): string {
+  return deckFileUrl(TEMPLATE_PREFIX, `${templateId}/deck.html`, `embed&slide=${encodeURIComponent(slideId)}&static`);
+}
+
+/** A slide id as a readable name: `pricing-tiers` → "Pricing tiers". */
+export function layoutLabel(slideId: string): string {
+  const words = slideId.replace(/[-_]+/g, " ").trim();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : slideId;
+}
+
 /** Whether `url` is a slide preview on the pasteboard, with or without the editor (see {@link slideUrl}). */
 export const isPasteboardUrl = (url: string) => /&(pan(&|$)|edit=)/.test(url);
 

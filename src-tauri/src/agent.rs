@@ -1,12 +1,12 @@
 //! Drives a coding agent CLI headless inside a deck folder, one process per turn, resuming
 //! the deck's session between turns: Claude Code (`claude -p --output-format stream-json`)
-//! OpenAI Codex (`codex exec --json`), or GitHub Copilot (see [`crate::copilot`]). Stream events are normalized into [`AgentEvent`]s
+//! OpenAI Codex (`codex app-server`), or GitHub Copilot (see [`crate::copilot`]). Stream events are normalized into [`AgentEvent`]s
 //! and emitted to the frontend as `agent-event`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -16,11 +16,11 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::watch;
 
-use crate::copilot;
 use crate::deck::{self, INTERNAL_DIR};
 use crate::env;
 use crate::error::{Error, Result};
 use crate::mcp;
+use crate::{codex, copilot};
 
 pub(crate) const SYSTEM_PROMPT: &str = include_str!("../prompts/system.md");
 /// File edits, URL fetches and this app's MCP tools; no shell.
@@ -83,6 +83,7 @@ impl Provider {
 #[derive(Default)]
 pub struct AgentManager {
     running: Mutex<HashMap<String, watch::Sender<bool>>>,
+    pub approvals: Arc<codex::Approvals>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -92,6 +93,17 @@ pub struct AgentManager {
     rename_all_fields = "camelCase"
 )]
 pub enum AgentEvent {
+    ApprovalRequested {
+        approval: codex::Approval,
+    },
+    ApprovalResolved {
+        id: String,
+    },
+    ApprovalReview {
+        id: String,
+        status: String,
+        detail: Option<String>,
+    },
     Started {
         session_id: Option<String>,
     },
@@ -155,6 +167,8 @@ pub struct SendArgs {
     /// Summarize the conversation so far instead of sending `prompt`.
     #[serde(default)]
     pub compact: bool,
+    #[serde(default)]
+    pub permission_mode: codex::PermissionMode,
 }
 
 impl AgentManager {
@@ -173,6 +187,7 @@ impl AgentManager {
             }
             running.insert(args.deck_id.clone(), cancel_tx);
         }
+        let approvals = self.approvals.clone();
         tauri::async_runtime::spawn(async move {
             let (emitter, deck_id) = (app.clone(), args.deck_id.clone());
             let turn = Turn {
@@ -197,12 +212,28 @@ impl AgentManager {
                     }),
                 effort: args.effort.filter(|e| !e.is_empty()),
                 compact: args.compact,
+                deck_id: args.deck_id.clone(),
+                permission_mode: args.permission_mode,
+                approvals,
             };
             // The whole deck is one file: keep a copy to fall back on before every turn.
             if let Err(e) = deck::snapshot(&turn.dir) {
                 log::warn!("snapshot failed: {e}");
             }
+            // Remember the locked slides, to put back any the agent changes.
+            if let Err(e) = deck::guard_locked(&turn.dir) {
+                log::warn!("could not record locked slides: {e}");
+            }
             let interrupted = turn.run(&args.prompt, cancel_rx).await;
+            match deck::release_guard(&turn.dir) {
+                Ok(restored) if !restored.is_empty() => turn.emit(&AgentEvent::Error {
+                    message: locked_restored_message(&restored),
+                }),
+                Ok(_) => {}
+                Err(e) => turn.emit(&AgentEvent::Error {
+                    message: format!("Could not check the locked slides after this turn: {e}"),
+                }),
+            }
             // Give new slides ids and restore the player runtime if the agent touched it.
             if let Err(e) = deck::normalize(&turn.dir) {
                 turn.emit(&AgentEvent::Error {
@@ -220,10 +251,21 @@ impl AgentManager {
     }
 
     pub fn interrupt(&self, deck_id: &str) {
+        self.approvals.cancel_deck(deck_id);
         if let Some(tx) = self.running.lock().unwrap().get(deck_id) {
             let _ = tx.send(true);
         }
     }
+}
+
+/// Tells the user which locked slides the agent changed and the app put back.
+fn locked_restored_message(ids: &[String]) -> String {
+    let list = ids
+        .iter()
+        .map(|id| format!("`{id}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("The agent changed locked slides; they were put back as they were: {list}.")
 }
 
 struct Turn {
@@ -234,6 +276,9 @@ struct Turn {
     model: Option<String>,
     effort: Option<String>,
     compact: bool,
+    deck_id: String,
+    permission_mode: codex::PermissionMode,
+    approvals: Arc<codex::Approvals>,
 }
 
 /// The prompt Claude Code runs as its built-in compaction command.
@@ -312,25 +357,34 @@ impl Turn {
                 |id: &str| deck::write_session(&self.dir, self.provider.session_file(), Some(id));
             return copilot::run_turn(args, cancel, &|event| self.emit(event), &on_session).await;
         }
-        // Claude Code and Codex stream JSON lines from a one-shot process.
-        let (args, mut parser) = if self.provider == Provider::Codex {
-            (
-                build_codex_args(&std::env::current_exe()?, &self.dir, model, effort, session),
-                Parser::Codex(CodexParser::default()),
+        if self.provider == Provider::Codex {
+            return codex::run_turn(
+                codex::TurnArgs {
+                    bin: &self.bin,
+                    dir: &self.dir,
+                    lint_server: &std::env::current_exe()?,
+                    deck_id: &self.deck_id,
+                    prompt,
+                    model,
+                    effort,
+                    session,
+                    mode: self.permission_mode,
+                    approvals: self.approvals.clone(),
+                },
+                cancel,
+                &|event| self.emit(event),
+                &|id| deck::write_session(&self.dir, self.provider.session_file(), Some(id)),
             )
-        } else {
-            let system_prompt = self.dir.join(INTERNAL_DIR).join("system-prompt.md");
-            std::fs::write(&system_prompt, SYSTEM_PROMPT)?;
-            let mcp_config = self.dir.join(INTERNAL_DIR).join("mcp.json");
-            std::fs::write(
-                &mcp_config,
-                lint_server_config(&std::env::current_exe()?, &self.dir),
-            )?;
-            (
-                build_claude_args(&system_prompt, &mcp_config, model, effort, session),
-                Parser::Claude,
-            )
-        };
+            .await;
+        }
+        let system_prompt = self.dir.join(INTERNAL_DIR).join("system-prompt.md");
+        std::fs::write(&system_prompt, SYSTEM_PROMPT)?;
+        let mcp_config = self.dir.join(INTERNAL_DIR).join("mcp.json");
+        std::fs::write(
+            &mcp_config,
+            lint_server_config(&std::env::current_exe()?, &self.dir),
+        )?;
+        let args = build_claude_args(&system_prompt, &mcp_config, model, effort, session);
         let started = Instant::now();
 
         let mut cmd = Command::new(&self.bin);
@@ -373,15 +427,13 @@ impl Turn {
 
         let mut lines = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
         let mut saw_init = false;
-        let mut saw_output = false;
         let mut result_text = None;
         loop {
             tokio::select! {
                 line = lines.next_line() => {
                     let Some(line) = line? else { break };
                     let Ok(value) = serde_json::from_str::<Value>(&line) else { continue };
-                    saw_output = true;
-                    if let Some(id) = parser.session_id(&value) {
+                    if let Some(id) = session_id_of_init(&value) {
                         saw_init = true;
                         deck::write_session(&self.dir, self.provider.session_file(), Some(&id))?;
                         self.emit(&AgentEvent::Started { session_id: Some(id) });
@@ -390,7 +442,7 @@ impl Turn {
                         let _ = child.kill().await;
                         return Ok(Outcome::ResumeFailed);
                     }
-                    for mut event in parser.parse(&value) {
+                    for mut event in parse_line(&value) {
                         if let AgentEvent::Result { text, duration_ms, .. } = &mut event {
                             result_text = text.clone();
                             duration_ms.get_or_insert(started.elapsed().as_millis() as u64);
@@ -408,11 +460,6 @@ impl Turn {
         let status = child.wait().await?;
         let stderr = stderr_task.await.unwrap_or_default();
         if session.is_some() && !saw_init && stderr.contains(MISSING_SESSION) {
-            return Ok(Outcome::ResumeFailed);
-        }
-        // Codex exits before emitting anything when the thread to resume is gone.
-        if session.is_some() && self.provider == Provider::Codex && !saw_output && !status.success()
-        {
             return Ok(Outcome::ResumeFailed);
         }
         if !status.success() && result_text.is_none() {
@@ -505,73 +552,6 @@ fn build_claude_args(
         args.extend(["--resume".into(), session.into()]);
     }
     args
-}
-
-/// `codex exec` options go before the `resume` subcommand; the prompt is read from stdin.
-fn build_codex_args(
-    exe: &Path,
-    dir: &Path,
-    model: Option<&str>,
-    effort: Option<&str>,
-    session: Option<&str>,
-) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "exec",
-        "--json",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "workspace-write",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
-    // A JSON string is a valid TOML basic string, so this survives Codex's `-c` parsing.
-    let instructions = serde_json::to_string(SYSTEM_PROMPT).expect("json");
-    // The lint tool server, as in `lint_server_config`; JSON arrays are valid TOML too.
-    let command = serde_json::to_string(&exe.to_string_lossy()).expect("json");
-    let server_args = serde_json::json!([mcp::FLAG, dir.to_string_lossy()]);
-    args.extend([
-        "-c".into(),
-        format!("developer_instructions={instructions}"),
-        "-c".into(),
-        format!("mcp_servers.{}.command={command}", mcp::SERVER),
-        "-c".into(),
-        format!("mcp_servers.{}.args={server_args}", mcp::SERVER),
-    ]);
-    if let Some(model) = model {
-        args.extend(["--model".into(), model.into()]);
-    }
-    if let Some(effort) = effort {
-        args.extend(["-c".into(), format!("model_reasoning_effort=\"{effort}\"")]);
-    }
-    if let Some(session) = session {
-        args.extend(["resume".into(), session.into()]);
-    }
-    args.push("-".into());
-    args
-}
-
-enum Parser {
-    Claude,
-    Codex(CodexParser),
-}
-
-impl Parser {
-    fn session_id(&self, value: &Value) -> Option<String> {
-        match self {
-            Parser::Claude => session_id_of_init(value),
-            Parser::Codex(_) => (value["type"] == "thread.started")
-                .then(|| value["thread_id"].as_str().map(str::to_string))
-                .flatten(),
-        }
-    }
-
-    fn parse(&mut self, value: &Value) -> Vec<AgentEvent> {
-        match self {
-            Parser::Claude => parse_line(value),
-            Parser::Codex(codex) => codex.parse(value),
-        }
-    }
 }
 
 const MISSING_SESSION: &str = "No conversation found";
@@ -689,110 +669,6 @@ fn claude_context_tokens(usage: &Value) -> Option<u64> {
 
 fn content_blocks(value: &Value) -> impl Iterator<Item = &Value> {
     value["message"]["content"].as_array().into_iter().flatten()
-}
-
-/// Maps `codex exec --json` lines to UI events. Codex reports whole items (no token
-/// deltas): agent messages arrive complete, tools as started/completed pairs.
-#[derive(Default)]
-struct CodexParser {
-    started: HashSet<String>,
-    last_message: Option<String>,
-}
-
-impl CodexParser {
-    fn parse(&mut self, value: &Value) -> Vec<AgentEvent> {
-        match value["type"].as_str() {
-            Some("turn.started") => vec![AgentEvent::Thinking],
-            Some("item.started") => {
-                let item = &value["item"];
-                match codex_tool(item) {
-                    Some((name, input)) => {
-                        let id = item["id"].as_str().unwrap_or_default().to_string();
-                        self.started.insert(id.clone());
-                        vec![AgentEvent::ToolUse { id, name, input }]
-                    }
-                    None => Vec::new(),
-                }
-            }
-            Some("item.completed") => {
-                let item = &value["item"];
-                let id = item["id"].as_str().unwrap_or_default().to_string();
-                match item["type"].as_str() {
-                    Some("agent_message") => {
-                        let text = item["text"].as_str().unwrap_or_default().to_string();
-                        self.last_message = Some(text.clone());
-                        vec![AgentEvent::TextStart, AgentEvent::TextDelta { text }]
-                    }
-                    Some("reasoning") => vec![AgentEvent::Thinking],
-                    _ => {
-                        let Some((name, input)) = codex_tool(item) else {
-                            return Vec::new();
-                        };
-                        let is_error = item["status"] == "failed"
-                            || item["exit_code"].as_i64().is_some_and(|c| c != 0);
-                        let mut events = Vec::new();
-                        if !self.started.remove(&id) {
-                            events.push(AgentEvent::ToolUse {
-                                id: id.clone(),
-                                name,
-                                input,
-                            });
-                        }
-                        events.push(AgentEvent::ToolResult { id, is_error });
-                        events
-                    }
-                }
-            }
-            Some("turn.completed") => vec![AgentEvent::Result {
-                is_error: false,
-                text: self.last_message.take(),
-                cost_usd: None,
-                duration_ms: None,
-            }],
-            Some("turn.failed") => vec![AgentEvent::Result {
-                is_error: true,
-                text: value["error"]["message"].as_str().map(str::to_string),
-                cost_usd: None,
-                duration_ms: None,
-            }],
-            Some("error") => value["message"]
-                .as_str()
-                .map(|message| {
-                    vec![AgentEvent::Error {
-                        message: message.to_string(),
-                    }]
-                })
-                .unwrap_or_default(),
-            _ => Vec::new(),
-        }
-    }
-}
-
-/// A Codex tool item as a Claude-style tool name and input, so the chat renders both alike.
-fn codex_tool(item: &Value) -> Option<(String, Value)> {
-    match item["type"].as_str()? {
-        "command_execution" => Some((
-            "Bash".into(),
-            serde_json::json!({ "command": item["command"] }),
-        )),
-        "file_change" => {
-            let path = item["changes"]
-                .as_array()
-                .and_then(|changes| changes.first())
-                .map(|change| change["path"].clone())
-                .unwrap_or(Value::Null);
-            Some(("Edit".into(), serde_json::json!({ "file_path": path })))
-        }
-        "web_search" => Some((
-            "WebSearch".into(),
-            serde_json::json!({ "query": item["query"] }),
-        )),
-        "mcp_tool_call" => Some((
-            item["tool"].as_str().unwrap_or("Tool").to_string(),
-            item["arguments"].clone(),
-        )),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -926,6 +802,14 @@ mod tests {
     }
 
     #[test]
+    fn names_the_locked_slides_it_put_back() {
+        assert_eq!(
+            locked_restored_message(&["intro".into(), "plan".into()]),
+            "The agent changed locked slides; they were put back as they were: `intro`, `plan`."
+        );
+    }
+
+    #[test]
     fn send_args_compact_defaults_to_off() {
         let args: SendArgs =
             serde_json::from_value(json!({"deckId":"d","prompt":"hi","provider":"claude"}))
@@ -961,59 +845,6 @@ mod tests {
         assert!(!is_missing_session(
             &json!({"type":"result","subtype":"success"})
         ));
-    }
-
-    #[test]
-    fn parses_codex_items() {
-        let mut parser = CodexParser::default();
-        let start = json!({"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls","status":"in_progress"}});
-        let done = json!({"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"ls","exit_code":0,"status":"completed"}});
-        let edit = json!({"type":"item.completed","item":{"id":"item_2","type":"file_change","changes":[{"path":"/d/deck.html","kind":"update"}],"status":"completed"}});
-        let message = json!({"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Done"}});
-        assert!(
-            matches!(&parser.parse(&start)[..], [AgentEvent::ToolUse { name, .. }] if name == "Bash")
-        );
-        assert_eq!(
-            parser.parse(&done),
-            vec![AgentEvent::ToolResult {
-                id: "item_1".into(),
-                is_error: false
-            }]
-        );
-        assert!(matches!(
-            &parser.parse(&edit)[..],
-            [AgentEvent::ToolUse { name, .. }, AgentEvent::ToolResult { .. }] if name == "Edit"
-        ));
-        assert_eq!(
-            parser.parse(&message),
-            vec![
-                AgentEvent::TextStart,
-                AgentEvent::TextDelta {
-                    text: "Done".into()
-                }
-            ]
-        );
-        assert!(matches!(
-            &parser.parse(&json!({"type":"turn.completed"}))[..],
-            [AgentEvent::Result { is_error: false, text: Some(t), .. }] if t == "Done"
-        ));
-    }
-
-    #[test]
-    fn codex_args_resume_after_options() {
-        let args = build_codex_args(
-            Path::new("/app/slopslide"),
-            Path::new("/d"),
-            Some("gpt-6-astra"),
-            Some("high"),
-            Some("t1"),
-        );
-        let resume = args.iter().position(|a| a == "resume").unwrap();
-        let model = args.iter().position(|a| a == "--model").unwrap();
-        assert!(model < resume);
-        assert_eq!(&args[resume + 1..], ["t1", "-"]);
-        assert!(args.contains(&"model_reasoning_effort=\"high\"".to_string()));
-        assert!(args.contains(&r#"mcp_servers.slopslide.args=["--lint-mcp","/d"]"#.to_string()));
     }
 
     #[test]
@@ -1341,6 +1172,9 @@ mod tests {
                     model: model.map(str::to_string),
                     effort: None,
                     compact: false,
+                    deck_id: "test".into(),
+                    permission_mode: codex::PermissionMode::Ask,
+                    approvals: Arc::default(),
                 }
             }
 

@@ -63,8 +63,9 @@ pub fn handle(request: &Value, dir: &Path) -> Option<Value> {
             "description": "Lint deck.html: checks that the HTML is well formed (all elements \
                 closed, no stray end tags) and follows the deck format (slides are \
                 <section class=\"slide\" id=\"…\"> in <main class=\"deck\">, unique kebab-case \
-                ids, attached assets exist, images have alt text). Run it after editing \
-                deck.html and fix every issue it reports.",
+                ids, attached assets exist, images have alt text) and that locked slides \
+                (data-locked) are unchanged. Run it after editing deck.html and fix every \
+                issue it reports.",
             "inputSchema": { "type": "object", "properties": {} },
         }, {
             "name": READ_NARRATION,
@@ -218,6 +219,21 @@ mod tests {
         assert_eq!(res["result"]["isError"], false);
         let text = res["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("[unclosed-tag]"), "{text}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn lint_tool_reports_locked_slides_changed_during_a_turn() {
+        let html = "<html><body><main class=\"deck\"><section class=\"slide\" id=\"a\" data-locked>A</section></main></body></html>";
+        let dir = temp_deck(html);
+        deck::guard_locked(&dir).unwrap();
+        std::fs::write(dir.join(deck::DECK_FILE), html.replace(">A<", ">B<")).unwrap();
+        let res = call(&dir, "tools/call", json!({"name": TOOL, "arguments": {}}));
+        let text = res["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("[locked-slide-changed] (slide `a`)"),
+            "{text}"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 

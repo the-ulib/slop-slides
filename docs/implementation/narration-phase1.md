@@ -6,6 +6,8 @@ Implemented 9 October 2026 on `codex/narration-poc`. No PR or push.
 
 Run the desktop app with `pnpm app:dev`, open a deck, and choose **Narration** in the right sidebar. Write a script, switch slides/tabs, and reopen the deck. Scripts save automatically beside `deck.html` in `narration.json`. Choose the deck language, optionally override a slide, set lead-in/tail pauses, or give an empty slide a silent duration.
 
+For Codex, leave **Codex permissions → Ask for approval** selected. Drafting opens Chat, where you can approve `read_narration` and `write_narration` when requested. This branch includes upstream main `cc5a2bb` and its interactive permission handling; the initial Phase 1 preview was accidentally based on older main `69ef3e4`, which forced the `never` approval policy. Rebuild/restart that older preview before retrying.
+
 **Draft narration** uses the currently selected Chat provider/model, for the selected slide or all visible slides. Audience and target minutes are optional. Chat shows progress; **Review narration** returns to the drafted slide. Speech generation, presenters and video export are later phases.
 
 ## Source and writes
@@ -28,9 +30,9 @@ Snapshots pair HTML and narration by filename stem in separate internal director
 
 ## Verification and limits
 
-`./check.sh` passed: 701 frontend tests, 232 Rust tests, TypeScript/build, rustfmt and clippy. Tests include delayed saves, field-level conflicts, stale loads, failed disk writes, malformed/future manifests, simultaneous writers, ID lifecycle, paired snapshot pruning, provider draft requests and independent narration watch events.
+`./check.sh` passed: 831 frontend tests, 295 Rust tests (4 opt-in live tests ignored), TypeScript/build, rustfmt and clippy. Tests include delayed saves, field-level conflicts, stale loads, failed disk writes, malformed/future manifests, simultaneous writers, ID lifecycle, paired snapshot pruning, provider draft requests and independent narration watch events.
 
-The browser preview was visually checked at 1480×920, including save/reopen, tab preservation and Review narration. Its mock IPC persists scripts in browser localStorage only; the desktop backend is tested with real temporary files. A compiled native-binary MCP stdio smoke also passed read, checked-save and stale-write rejection. Live paid provider drafting and the full native application UI were not manually exercised. No models or speech dependencies were installed by this phase.
+The browser preview was visually checked at 1480×920, including save/reopen, tab preservation and Review narration. Its mock IPC persists scripts in browser localStorage only; the desktop backend is tested with real temporary files. A compiled native-binary MCP stdio smoke also passed read, checked-save and stale-write rejection. After merging current main, the rebuilt native preview was opened with the existing deck and its Codex permission picker was verified to default to Ask. An opt-in test with the installed, signed-in Codex CLI passed a real read_narration approval and successful tool result on a disposable deck. Its prompt permits tool search because Codex may defer tool discovery; an initial overly restrictive prompt reported the tool unavailable. Frontend drafting regression tests cover Ask mode, read/write approval responses and return to Narration; subprocess tests verify MCP approval wire responses. A complete live draft/write on a user deck remains to be tried. No models or speech dependencies were installed by this phase.
 
 ![Phase 1 right-sidebar editor](narration-phase1.jpg)
 

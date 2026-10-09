@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neo-Brutalism</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;700&display=swap");
+
+    /* Layouts shared by every SlopSlide template: title, section, bullets, split, stats,
+       quote, closing. The style below this block gives them their look. */
+    .slide {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 120px 140px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 32px;
+      line-height: 1.4;
+    }
+    .slide h1, .slide h2, .slide p, .slide ul, .slide blockquote, .slide figure { margin: 0; }
+    .slide h1, .slide h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.04; }
+    .slide h1 { font-size: 128px; }
+    .slide h2 { font-size: 88px; }
+    .slide .deco { position: absolute; inset: 0; pointer-events: none; }
+    .slide .deco span { position: absolute; display: block; }
+    .slide .frame { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 32px; max-width: 1400px; }
+    .slide .eyebrow { font-size: 26px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+    .slide .lede { font-size: 40px; color: var(--muted); max-width: 1200px; }
+    .slide .byline { font-size: 26px; color: var(--muted); }
+    .slide .number { font-family: var(--font-display); font-size: 160px; line-height: 1; color: var(--accent); }
+    .layout-bullets, .layout-stats { justify-content: flex-start; gap: 72px; }
+    .slide .frame-head { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 20px; max-width: 1400px; }
+    .slide .points { position: relative; display: flex; flex-direction: column; gap: 36px; max-width: 1450px; padding: 0; list-style: none; }
+    .slide .points li { position: relative; padding-left: 52px; font-size: 38px; color: var(--muted); }
+    .slide .points li::before { content: ""; position: absolute; left: 0; top: 0.5em; width: 20px; height: 20px; background: var(--accent); }
+    .slide .points strong { color: var(--ink); }
+    .layout-split { flex-direction: row; align-items: center; gap: 100px; }
+    .slide .text { position: relative; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 32px; }
+    .slide .body { font-size: 34px; color: var(--muted); }
+    .slide .visual { position: relative; flex: 0 0 720px; height: 720px; }
+    .slide .placeholder { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--panel); color: var(--muted); font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .slide .stats { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 56px; }
+    .slide .stat { display: flex; flex-direction: column; gap: 16px; }
+    .slide .value { font-family: var(--font-display); font-size: 150px; font-weight: 700; line-height: 1; color: var(--accent); }
+    .slide .label { font-size: 30px; color: var(--muted); }
+    .layout-quote { align-items: flex-start; gap: 48px; }
+    .layout-quote blockquote { position: relative; max-width: 1500px; font-family: var(--font-display); font-size: 80px; line-height: 1.15; }
+    .slide .cite { position: relative; font-size: 30px; color: var(--muted); }
+    .layout-closing h2 { font-size: 160px; }
+
+    /* Neo-Brutalism */
+    :root {
+      --bg: #fff4d6;
+      --ink: #0a0a0a;
+      --muted: #2b2b2b;
+      --accent: #ff5c8a;
+      --panel: #3a86ff;
+      --sun: #ffd23f;
+      --font-display: "Archivo Black", "Arial Black", sans-serif;
+      --font-body: "Space Grotesk", "Helvetica Neue", sans-serif;
+      --line: 6px solid #0a0a0a;
+      --hard: 14px 14px 0 #0a0a0a;
+    }
+    .slide h1, .slide h2 { font-weight: 400; letter-spacing: -0.02em; text-transform: uppercase; }
+    .slide h1 { font-size: 136px; }
+    .slide .deco span:nth-child(1) { right: 120px; top: 90px; width: 180px; height: 180px; border: var(--line); border-radius: 50%; background: var(--sun); box-shadow: var(--hard); }
+    .slide .deco span:nth-child(2) { right: 90px; bottom: 100px; width: 300px; height: 70px; border: var(--line); background: var(--accent); box-shadow: var(--hard); transform: rotate(-6deg); }
+    .slide .deco span:nth-child(3) { left: 0; right: 0; bottom: 0; height: 36px; border-top: var(--line); background: repeating-linear-gradient(-45deg, #0a0a0a 0 18px, var(--sun) 18px 36px); }
+    .slide .eyebrow { padding: 8px 20px; border: 4px solid #0a0a0a; background: var(--sun); color: #0a0a0a; box-shadow: 6px 6px 0 #0a0a0a; }
+    .slide .lede { color: var(--ink); }
+    .layout-title h1 { padding: 24px 40px; border: var(--line); background: #fff; box-shadow: var(--hard); }
+    .slide .number { padding: 12px 36px; border: var(--line); background: var(--panel); color: #fff; box-shadow: var(--hard); font-size: 120px; }
+    .slide .points li { padding: 24px 32px 24px 96px; border: 5px solid #0a0a0a; background: #fff; box-shadow: 10px 10px 0 #0a0a0a; color: var(--ink); }
+    .slide .points li::before { left: 28px; top: 50%; width: 36px; height: 36px; margin-top: -18px; border: 4px solid #0a0a0a; }
+    .slide .points li:nth-child(2)::before { background: var(--sun); }
+    .slide .points li:nth-child(3)::before { background: var(--panel); }
+    .slide .visual .placeholder { border: var(--line); background: var(--panel); color: #fff; box-shadow: var(--hard); font-weight: 700; }
+    .slide .stat { padding: 40px; border: var(--line); background: #fff; box-shadow: var(--hard); }
+    .slide .stat:nth-child(1) { background: var(--sun); }
+    .slide .stat:nth-child(3) { background: var(--accent); }
+    .slide .value { color: var(--ink); font-weight: 400; }
+    .slide .label { color: var(--ink); font-weight: 700; }
+    .layout-quote blockquote { padding: 64px 72px; border: var(--line); background: #fff; box-shadow: var(--hard); font-size: 64px; text-transform: uppercase; }
+    .slide .cite { padding: 8px 20px; border: 4px solid #0a0a0a; background: var(--accent); color: #0a0a0a; font-weight: 700; }
+    .layout-closing h2 { font-size: 180px; color: var(--accent); -webkit-text-stroke: 4px #0a0a0a; text-shadow: 10px 10px 0 #0a0a0a; }
+    .layout-split .deco span:nth-child(1), .layout-split .deco span:nth-child(2) { display: none; }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide layout-title" id="title">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <p class="eyebrow reveal">Category · 2026</p>
+        <h1 class="reveal reveal-delay-1">Presentation title</h1>
+        <p class="lede reveal reveal-delay-2">A one-line subtitle that frames the story you are about to tell.</p>
+        <p class="byline reveal reveal-delay-3">Presenter name · Event or date</p>
+      </div>
+    </section>
+    <section class="slide layout-section" id="section">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <p class="number reveal">01</p>
+        <h2 class="reveal reveal-delay-1">Section title</h2>
+        <p class="lede reveal reveal-delay-2">What this part of the talk covers, in one sentence.</p>
+      </div>
+    </section>
+    <section class="slide layout-bullets" id="bullets">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <header class="frame-head">
+        <p class="eyebrow reveal">Key points</p>
+        <h2 class="reveal reveal-delay-1">A headline that states the point</h2>
+      </header>
+      <ul class="points">
+        <li class="reveal reveal-delay-2"><strong>First idea.</strong> One short line of supporting detail.</li>
+        <li class="reveal reveal-delay-3"><strong>Second idea.</strong> Keep each point to a single thought.</li>
+        <li class="reveal reveal-delay-4"><strong>Third idea.</strong> Three to five points read best.</li>
+      </ul>
+    </section>
+    <section class="slide layout-split" id="split">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="text">
+        <p class="eyebrow reveal">Context</p>
+        <h2 class="reveal reveal-delay-1">Words on one side, a visual on the other</h2>
+        <p class="body reveal reveal-delay-2">Two or three sentences that explain the picture. Swap the placeholder for a photo, chart, or diagram.</p>
+      </div>
+      <figure class="visual reveal reveal-delay-2">
+        <div class="placeholder"><span>Image or diagram</span></div>
+      </figure>
+    </section>
+    <section class="slide layout-stats" id="stats">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <header class="frame-head">
+        <p class="eyebrow reveal">By the numbers</p>
+        <h2 class="reveal reveal-delay-1">Three figures that tell the story</h2>
+      </header>
+      <div class="stats">
+        <div class="stat reveal reveal-delay-2"><span class="value">42%</span><span class="label">What the first number measures</span></div>
+        <div class="stat reveal reveal-delay-3"><span class="value">3.5×</span><span class="label">What the second number measures</span></div>
+        <div class="stat reveal reveal-delay-4"><span class="value">120</span><span class="label">What the third number measures</span></div>
+      </div>
+    </section>
+    <section class="slide layout-quote" id="quote">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <blockquote class="reveal">“A memorable line from a customer, an expert, or the team that makes the point land.”</blockquote>
+      <p class="cite reveal reveal-delay-1">Name Surname, Role at Company</p>
+    </section>
+    <section class="slide layout-closing" id="closing">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <h2 class="reveal">Thank you</h2>
+        <p class="lede reveal reveal-delay-1">Questions, next steps, or a call to action.</p>
+        <p class="byline reveal reveal-delay-2">name@company.com · company.com</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

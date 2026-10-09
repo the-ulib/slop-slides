@@ -33,6 +33,11 @@ beforeEach(() => {
         return deckFor(DECK_HTML);
       case "load_chat":
         return null;
+      case "list_templates":
+        return [
+          { id: "mine", title: "Mine", builtin: false, path: "/t/mine", slides: ["cover"] },
+          { id: "swiss", title: "Swiss Design", builtin: true, path: null, slides: ["title"] },
+        ];
       case "agent_running":
         return false;
     }
@@ -78,14 +83,26 @@ describe("Home", () => {
     const input = screen.getByPlaceholderText(/Deck title/);
     fireEvent.change(input, { target: { value: "  Quarterly update  " } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /New deck/ })));
-    expect(invoke).toHaveBeenCalledWith("create_deck", { title: "Quarterly update" });
+    expect(invoke).toHaveBeenCalledWith("create_deck", { title: "Quarterly update", template: null });
     await waitFor(() => expect(useApp.getState().deck).not.toBeNull());
   });
 
   it("creates an untitled deck when no title is given", async () => {
     render(<Home />);
     await act(async () => fireEvent.submit(screen.getByPlaceholderText(/Deck title/)));
-    expect(invoke).toHaveBeenCalledWith("create_deck", { title: "Untitled deck" });
+    expect(invoke).toHaveBeenCalledWith("create_deck", { title: "Untitled deck", template: null });
+  });
+
+  it("offers the templates as styles for a new deck", async () => {
+    useApp.setState({ templates: undefined });
+    render(<Home />);
+    const style = screen.getByLabelText("Style") as HTMLSelectElement;
+    await waitFor(() => expect(style.options).toHaveLength(3));
+    expect([...style.options].map((o) => o.textContent)).toEqual(["Any style", "Mine (yours)", "Swiss Design"]);
+    fireEvent.change(style, { target: { value: "swiss" } });
+    fireEvent.change(screen.getByPlaceholderText(/Deck title/), { target: { value: "Board" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /New deck/ })));
+    expect(invoke).toHaveBeenCalledWith("create_deck", { title: "Board", template: "swiss" });
   });
 
   it("opens a deck when its card is clicked", async () => {

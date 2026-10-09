@@ -3,8 +3,8 @@
 
    Click selects an element, drag (or arrow keys) moves it. Its corner and edge handles
    stretch it while the opposite side stays put (Shift keeps the aspect ratio, Alt scales
-   from the center); the handle above it rotates it (Shift snaps to 15°). Double-click a
-   handle to reset.
+   from the center); the round handle above it rotates it and the diamond next to it tilts it
+   in depth, in 3D with perspective (Shift snaps to 15°). Double-click a handle to reset.
    Double-click (or Enter) edits its text, Escape selects the parent. Delete (or Backspace, or
    { type: "slop:edit-delete" } from the app) removes it.
    Every change is posted to the app as the slide's new markup:
@@ -30,6 +30,11 @@
   var DOUBLE_CLICK_MS = 400;
   var NUDGE_SAVE_MS = 500;
   var ROTATE_SNAP = 15;
+  // Degrees of tilt per screen pixel dragged, and how far away the viewer of a tilt stands.
+  var TILT_PER_PX = 0.5;
+  var PERSPECTIVE = 1000;
+  // The tilt the editor puts in front of an element's inline `transform`.
+  var TILT = /^perspective\([\d.]+px\) rotateX\((-?[\d.]+)deg\) rotateY\((-?[\d.]+)deg\)\s*/;
   var MIN_SCALE = 0.1;
   var OVERFLOW_TOLERANCE = 2;
 
@@ -42,18 +47,22 @@
     // The selection frame is drawn by the handle overlay, so it keeps its size on screen.
     "[data-slop-selected] { cursor: move !important; }" +
     "[data-slop-editing] { outline: 3px solid #3b82f6 !important; outline-offset: 4px; }" +
-    "[data-slop-ui] { position: fixed; z-index: 2147483647; pointer-events: none; box-sizing: border-box;" +
-    " outline: 2px solid #3b82f6; }" +
-    "[data-slop-ui] > * { position: absolute; box-sizing: border-box; pointer-events: auto; background: #fff;" +
+    "[data-slop-ui] { position: fixed; z-index: 2147483647; pointer-events: none; box-sizing: border-box; }" +
+    "[data-slop-ui] * { position: absolute; box-sizing: border-box; }" +
+    // The frame and its stretch handles lie in the element's plane, tilted with it.
+    "[data-slop-ui] > [data-plane] { inset: 0; outline: 2px solid #3b82f6; }" +
+    "[data-slop-ui] [data-handle] { pointer-events: auto; background: #fff;" +
     " border: 2px solid #3b82f6; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); touch-action: none;" +
     " width: 16px; height: 16px; }" +
-    "[data-slop-ui] > [data-handle=scale] { border-radius: 3px; }" +
-    "[data-slop-ui] > [data-axis] { border-radius: 8px; }" +
-    "[data-slop-ui] > [data-axis=x] { height: 24px; }" +
-    "[data-slop-ui] > [data-axis=y] { width: 24px; }" +
-    "[data-slop-ui][data-narrow] > [data-axis=y], [data-slop-ui][data-flat] > [data-axis=x] { display: none; }" +
+    "[data-slop-ui] [data-handle=scale] { border-radius: 3px; }" +
+    "[data-slop-ui] [data-axis] { border-radius: 8px; }" +
+    "[data-slop-ui] [data-axis=x] { height: 24px; }" +
+    "[data-slop-ui] [data-axis=y] { width: 24px; }" +
+    "[data-slop-ui][data-narrow] [data-axis=y], [data-slop-ui][data-flat] [data-axis=x] { display: none; }" +
     "[data-slop-ui] > [data-handle=rotate] { border-radius: 50%; width: 18px; height: 18px; margin: 0 0 0 -9px;" +
     " left: 50%; top: -48px; cursor: grab; }" +
+    "[data-slop-ui] > [data-handle=tilt] { width: 14px; height: 14px; margin: 2px 0 0 18px; left: 50%; top: -48px;" +
+    " transform: rotate(45deg); cursor: move; }" +
     "[data-slop-overflow] { position: fixed; inset: 0; z-index: 2147483646; pointer-events: none; }" +
     "[data-slop-overflow][data-quiet] { display: none; }" +
     "[data-slop-overflow] > * { position: absolute; box-sizing: border-box; }" +
@@ -71,13 +80,15 @@
     " -webkit-user-select: text; user-select: text; cursor: text !important; }";
   document.head.appendChild(style);
 
-  // Scale and rotate handles, outside the slide so they never end up in its markup. They sit
-  // just outside the frame, so even small text stays clickable (and double-clickable) inside it.
+  // Scale, rotate, and tilt handles, outside the slide so they never end up in its markup. They
+  // sit just outside the frame, so even small text stays clickable (and double-clickable) inside
+  // it. The rotate and tilt handles stay flat, so they can be grabbed however far it is tilted.
   var ui = document.createElement("div");
   ui.setAttribute("data-slop-ui", "");
   ui.style.display = "none";
   ui.innerHTML =
     '<div data-stem></div><div data-handle="rotate" title="Rotate (Shift snaps to 15°, double-click resets)"></div>' +
+    '<div data-handle="tilt" title="Tilt in 3D (Shift snaps to 15°, double-click resets)"></div><div data-plane>' +
     [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]
       .map(function (d) {
         var cursor = d[0] === 0 ? "ns" : d[1] === 0 ? "ew" : d[0] === d[1] ? "nwse" : "nesw";
@@ -94,8 +105,10 @@
           outside(d[0], w) + "px; cursor: " + cursor + '-resize"></div>'
         );
       })
-      .join("");
+      .join("") +
+    "</div>";
   document.body.appendChild(ui);
+  var plane = ui.querySelector("[data-plane]");
 
   var wires = document.createElement("div");
   wires.setAttribute("data-slop-overflow", "");
@@ -253,16 +266,50 @@
   function sheetValue(el, prop) {
     var inline = el.style[prop];
     if (!inline) return getComputedStyle(el)[prop];
+    var priority = el.style.getPropertyPriority(prop);
     el.style[prop] = "";
     var value = getComputedStyle(el)[prop];
-    el.style[prop] = inline;
+    el.style.setProperty(prop, inline, priority);
     return value;
   }
 
-  function rotateTo(el, degrees) {
+  /** The element's 3D tilt in degrees: around its horizontal (x) and vertical (y) axis. */
+  function tiltOf(el) {
+    var match = (el.style.transform || "").match(TILT);
+    return match ? { x: parseFloat(match[1]), y: parseFloat(match[2]) } : { x: 0, y: 0 };
+  }
+
+  /**
+   * Tilts `el` in depth with an inline `transform` (there is no separate property for it), seen
+   * with perspective. It is `!important` so entrance animations, which animate `transform`,
+   * cannot undo it, and keeps whatever `transform` the element already had after the tilt.
+   */
+  function tiltTo(el, x, y) {
+    x = wrapAngle(x);
+    y = wrapAngle(y);
+    var inline = el.style.transform;
+    var sheet = sheetValue(el, "transform");
+    // An entrance animation that ended leaves the identity matrix.
+    sheet = !sheet || sheet === "none" || sheet === "matrix(1, 0, 0, 1, 0, 0)" ? "" : sheet;
+    var rest = inline ? inline.replace(TILT, "") : sheet;
+    if (x || y) {
+      var tilt = "perspective(" + PERSPECTIVE + "px) rotateX(" + x + "deg) rotateY(" + y + "deg)";
+      setInline(el, "transform", rest ? tilt + " " + rest : tilt, "important");
+    } else {
+      setInline(el, "transform", rest && rest !== sheet ? rest : null);
+    }
+  }
+
+  /** Whole degrees in (-180, 180]. */
+  function wrapAngle(degrees) {
     degrees = Math.round(degrees) % 360;
     if (degrees > 180) degrees -= 360;
     if (degrees <= -180) degrees += 360;
+    return degrees;
+  }
+
+  function rotateTo(el, degrees) {
+    degrees = wrapAngle(degrees);
     var sheet = sheetValue(el, "rotate");
     var same = degrees === 0 ? !sheet || sheet === "none" || sheet === "0deg" : sheet === degrees + "deg";
     setInline(el, "rotate", same ? null : degrees + "deg");
@@ -276,12 +323,23 @@
   }
 
   /** Sets (or with null, drops) an inline transform; `data-moved` marks any hand transform. */
-  function setInline(el, prop, value) {
+  function setInline(el, prop, value, priority) {
     if (value === null) el.style.removeProperty(prop);
-    else el.style[prop] = value;
+    else el.style.setProperty(prop, value, priority || "");
     if (!el.getAttribute("style")) el.removeAttribute("style");
-    mark(el, MOVED, !!(el.style.translate || el.style.rotate || el.style.scale));
+    mark(el, MOVED, !!(el.style.translate || el.style.rotate || el.style.scale || TILT.test(el.style.transform || "")));
     placeHandles();
+  }
+
+  /** The center of the element's box on screen; a tilt in perspective would shift its bounds. */
+  function centerOf(el) {
+    var inline = el.style.transform || "";
+    var tilted = TILT.test(inline);
+    var priority = el.style.getPropertyPriority("transform");
+    if (tilted) el.style.setProperty("transform", inline.replace(TILT, "") || "none", priority);
+    var rect = el.getBoundingClientRect();
+    if (tilted) el.style.setProperty("transform", inline, priority);
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   }
 
   /** The element's untransformed size, in slide pixels. */
@@ -306,17 +364,22 @@
       ui.style.display = "none";
       return;
     }
-    var rect = selected.getBoundingClientRect();
+    var center = centerOf(selected);
     var size = sizeOf(selected);
     var scale = scaleOf(selected);
     var w = size.w * scale.x * zoom();
     var h = size.h * scale.y * zoom();
     ui.style.display = "";
-    ui.style.left = rect.left + rect.width / 2 - w / 2 + "px";
-    ui.style.top = rect.top + rect.height / 2 - h / 2 + "px";
+    ui.style.left = center.x - w / 2 + "px";
+    ui.style.top = center.y - h / 2 + "px";
     ui.style.width = w + "px";
     ui.style.height = h + "px";
     ui.style.transform = "rotate(" + angleOf(selected) + "deg)";
+    // The frame tilts like the element; its perspective scales with it to look the same.
+    var tilt = tiltOf(selected);
+    var k = zoom() * Math.sqrt(scale.x * scale.y);
+    plane.style.transform =
+      tilt.x || tilt.y ? "perspective(" + PERSPECTIVE * k + "px) rotateX(" + tilt.x + "deg) rotateY(" + tilt.y + "deg)" : "";
     // Edge handles only where there is room for them between the corners.
     mark(ui, "data-narrow", w < 40);
     mark(ui, "data-flat", h < 40);
@@ -328,14 +391,14 @@
     event.preventDefault();
     event.stopPropagation();
     if (nudgeTimer) commit();
-    var rect = selected.getBoundingClientRect();
     var dir = (event.target.getAttribute("data-dir") || "0 0").split(" ").map(Number);
     drag = {
       mode: kind,
       el: selected,
-      center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      center: centerOf(selected),
       start: { x: event.clientX, y: event.clientY },
       angle: angleOf(selected),
+      tilt: tiltOf(selected),
       scale: scaleOf(selected),
       offset: offsetOf(selected),
       size: sizeOf(selected),
@@ -356,6 +419,7 @@
     event.stopPropagation();
     if (!kind || !selected) return;
     if (kind === "rotate") rotateTo(selected, 0);
+    else if (kind === "tilt") tiltTo(selected, 0, 0);
     else scaleTo(selected, 1, 1);
     commit();
   });
@@ -373,6 +437,16 @@
       var start = Math.atan2(drag.start.y - c.y, drag.start.x - c.x);
       var degrees = drag.angle + ((Math.atan2(event.clientY - c.y, event.clientX - c.x) - start) * 180) / Math.PI;
       rotateTo(drag.el, event.shiftKey ? Math.round(degrees / ROTATE_SNAP) * ROTATE_SNAP : degrees);
+      return;
+    }
+    if (drag.mode === "tilt") {
+      // Like rolling a ball: the side the pointer pulls towards turns away. Dragging follows
+      // the element's own axes, however it is rotated.
+      var pulled = turn(event.clientX - drag.start.x, event.clientY - drag.start.y, -drag.angle);
+      var snap = function (deg) {
+        return event.shiftKey ? Math.round(deg / ROTATE_SNAP) * ROTATE_SNAP : deg;
+      };
+      tiltTo(drag.el, snap(drag.tilt.x - pulled.y * TILT_PER_PX), snap(drag.tilt.y + pulled.x * TILT_PER_PX));
       return;
     }
     stretchTo(event.clientX - drag.start.x, event.clientY - drag.start.y, event.shiftKey, event.altKey);

@@ -6,10 +6,12 @@ import { api, errorMessage, type DeckSummary } from "../lib/api";
 import { cn, isMac, relativeTime } from "../lib/utils";
 import { useApp } from "../store";
 import { SlideFrame } from "./SlideFrame";
+import { TemplateSelect } from "./Templates";
 
 export function Home() {
   const [decks, setDecks] = useState<DeckSummary[] | null>(null);
   const [title, setTitle] = useState("");
+  const [template, setTemplate] = useState<string | null>(null);
 
   const refresh = () =>
     api
@@ -23,7 +25,7 @@ export function Home() {
 
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
-    await useApp.getState().createDeck(title.trim() || "Untitled deck");
+    await useApp.getState().createDeck(title.trim() || "Untitled deck", template);
   };
 
   const remove = async (deck: DeckSummary) => {
@@ -60,6 +62,7 @@ export function Home() {
                 placeholder="Deck title, e.g. Series A pitch"
                 className="h-10 flex-1 rounded-lg border bg-card px-3 text-sm outline-none focus:border-input focus:ring-2 focus:ring-primary/20"
               />
+              <TemplateSelect value={template} onChange={setTemplate} />
               <button
                 type="submit"
                 className="flex h-10 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"

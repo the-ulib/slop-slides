@@ -1,5 +1,6 @@
 mod agent;
 mod capture;
+mod codex;
 mod copilot;
 mod deck;
 mod env;
@@ -11,6 +12,7 @@ mod narration;
 mod protocol;
 mod providers;
 mod review;
+mod templates;
 mod watcher;
 
 use serde::Serialize;
@@ -42,10 +44,87 @@ fn list_decks(app: AppHandle) -> Result<Vec<DeckSummary>> {
 }
 
 #[tauri::command]
-fn create_deck(app: AppHandle, watcher: State<DeckWatcher>, title: String) -> Result<Deck> {
-    let deck = deck::create(&deck::library_root(&app)?, &title)?;
+fn create_deck(
+    app: AppHandle,
+    watcher: State<DeckWatcher>,
+    title: String,
+    template: Option<String>,
+) -> Result<Deck> {
+    let root = templates::user_root(&app)?;
+    let source = template
+        .as_deref()
+        .map(|t| templates::source(&root, t))
+        .transpose()?;
+    let template = template
+        .as_deref()
+        .zip(source.as_deref())
+        .map(|(id, html)| deck::TemplateSource { id, html });
+    let deck = deck::create(&deck::library_root(&app)?, &title, template)?;
+    stage_deck_template(&app, &deck);
     watcher.watch(app, deck.id.clone(), deck.path.clone().into())?;
     Ok(deck)
+}
+
+/// Copies the deck's template into its internals, where the agent reads its layouts.
+/// Best effort: a template that is gone only means there are no layouts to read.
+fn stage_deck_template(app: &AppHandle, deck: &Deck) {
+    if let (Some(template), Ok(root)) = (&deck.template, templates::user_root(app)) {
+        let _ = templates::stage(std::path::Path::new(&deck.path), &root, template);
+    }
+}
+
+#[tauri::command]
+fn list_templates(app: AppHandle) -> Result<Vec<templates::TemplateSummary>> {
+    Ok(templates::list(&templates::user_root(&app)?))
+}
+
+/// Copies a template into the deck's internals for the agent; returns its deck-relative path.
+#[tauri::command]
+fn stage_template(app: AppHandle, id: String, template: String) -> Result<String> {
+    templates::stage(
+        &deck::deck_dir(&app, &id)?,
+        &templates::user_root(&app)?,
+        &template,
+    )
+}
+
+/// Gives a deck without slides the template's styles.
+#[tauri::command]
+fn apply_template(app: AppHandle, id: String, template: String) -> Result<Deck> {
+    let root = templates::user_root(&app)?;
+    let html = templates::source(&root, &template)?;
+    let source = deck::TemplateSource {
+        id: &template,
+        html: &html,
+    };
+    let deck = deck::apply_template(&deck::deck_dir(&app, &id)?, &id, source)?;
+    stage_deck_template(&app, &deck);
+    Ok(deck)
+}
+
+/// Adds a copy of one of the template's slides after `after`.
+#[tauri::command]
+fn add_template_slide(
+    app: AppHandle,
+    id: String,
+    template: String,
+    slide: String,
+    after: Option<String>,
+) -> Result<CreatedSlide> {
+    let html = templates::source(&templates::user_root(&app)?, &template)?;
+    let (deck, slide) =
+        deck::add_template_slide(&deck::deck_dir(&app, &id)?, &id, after, &html, &slide)?;
+    Ok(CreatedSlide { deck, slide })
+}
+
+/// Saves the deck as a new user template, with placeholder text in place of its content.
+#[tauri::command]
+fn create_template(app: AppHandle, id: String, name: String) -> Result<templates::TemplateSummary> {
+    templates::create_from_deck(
+        &deck::deck_dir(&app, &id)?,
+        &templates::user_root(&app)?,
+        &name,
+    )
 }
 
 #[tauri::command]
@@ -56,6 +135,7 @@ fn open_deck(
     id: String,
 ) -> Result<Deck> {
     let deck = deck::open(&deck::deck_dir(&app, &id)?, &id, !agent.is_running(&id))?;
+    stage_deck_template(&app, &deck);
     watcher.watch(app, deck.id.clone(), deck.path.clone().into())?;
     Ok(deck)
 }
@@ -130,6 +210,11 @@ fn set_slide_hidden(app: AppHandle, id: String, slide: String, hidden: bool) -> 
 }
 
 #[tauri::command]
+fn set_slide_locked(app: AppHandle, id: String, slide: String, locked: bool) -> Result<Deck> {
+    deck::set_slide_locked(&deck::deck_dir(&app, &id)?, &id, &slide, locked)
+}
+
+#[tauri::command]
 fn add_section(app: AppHandle, id: String, before: Option<String>, title: String) -> Result<Deck> {
     deck::add_section(&deck::deck_dir(&app, &id)?, &id, before, &title)
 }
@@ -186,6 +271,11 @@ fn save_deck_source(
 #[tauri::command]
 fn import_assets(app: AppHandle, id: String, paths: Vec<String>) -> Result<Vec<String>> {
     deck::import_assets(&deck::deck_dir(&app, &id)?, paths)
+}
+
+#[tauri::command]
+fn save_asset(app: AppHandle, id: String, name: String, data: String) -> Result<String> {
+    deck::save_asset(&deck::deck_dir(&app, &id)?, &name, &data)
 }
 
 #[tauri::command]
@@ -263,6 +353,22 @@ fn send_message(app: AppHandle, agent: State<AgentManager>, args: SendArgs) -> R
 }
 
 #[tauri::command]
+async fn codex_permission_modes(app: AppHandle, id: String) -> Result<Vec<codex::PermissionMode>> {
+    let dir = deck::deck_dir(&app, &id)?;
+    codex::permission_modes(&dir).await
+}
+
+#[tauri::command]
+fn respond_approval(
+    agent: State<AgentManager>,
+    deck_id: String,
+    id: String,
+    decision: codex::Decision,
+) -> Result<()> {
+    agent.approvals.respond(&deck_id, &id, decision)
+}
+
+#[tauri::command]
 fn interrupt_agent(agent: State<AgentManager>, id: String) {
     agent.interrupt(&id);
 }
@@ -311,6 +417,7 @@ pub fn run() {
             add_slide,
             duplicate_slide,
             set_slide_hidden,
+            set_slide_locked,
             add_section,
             rename_section,
             delete_section,
@@ -318,6 +425,7 @@ pub fn run() {
             update_slide,
             save_deck_source,
             import_assets,
+            save_asset,
             export_deck,
             lint_deck,
             capture_sketch,
@@ -328,8 +436,15 @@ pub fn run() {
             reset_chat,
             send_message,
             interrupt_agent,
+            codex_permission_modes,
+            respond_approval,
             agent_running,
             list_providers,
+            list_templates,
+            stage_template,
+            apply_template,
+            add_template_slide,
+            create_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SlopSlide");

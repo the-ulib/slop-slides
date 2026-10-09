@@ -12,11 +12,11 @@ import { DECK_HTML, deckFor } from "../test/fixtures";
 import { SlideRail } from "./SlideRail";
 
 const DECK = deckFor(DECK_HTML);
-const withSlides = (...ids: string[]): Deck => ({ ...DECK, slides: ids.map((id) => ({ id, hash: id, hidden: false, moved: false })) });
+const withSlides = (...ids: string[]): Deck => ({ ...DECK, slides: ids.map((id) => ({ id, hash: id, hidden: false, locked: false, moved: false })) });
 
 beforeEach(() => {
   invoke.mockReset();
-  useApp.setState({ deck: DECK, selected: "intro", error: null, revealRev: 0 });
+  useApp.setState({ deck: DECK, selected: "intro", error: null, revealRev: 0, templates: [{ id: "swiss", title: "Swiss Design", builtin: true, path: null, slides: ["title"] }] });
 });
 
 // dnd-kit gives sortable items role="button", so find them by tag.
@@ -70,7 +70,9 @@ describe("SlideRail", () => {
   it("adds a blank slide after the selected one and selects it", async () => {
     invoke.mockResolvedValue({ deck: withSlides("intro", "slide", "#2", "outro"), slide: "slide" });
     render(<SlideRail />);
+    await act(async () => fireEvent.click(screen.getByTitle("New slide")));
     await act(async () => fireEvent.click(screen.getByTitle("Add blank slide")));
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(invoke).toHaveBeenCalledWith("add_slide", { id: "talk", after: "intro" });
     expect(useApp.getState().selected).toBe("slide");
     expect(items()).toHaveLength(4);
@@ -80,6 +82,7 @@ describe("SlideRail", () => {
     useApp.setState({ deck: { ...DECK, slides: [] }, selected: null });
     invoke.mockResolvedValue({ deck: withSlides("slide"), slide: "slide" });
     render(<SlideRail />);
+    await act(async () => fireEvent.click(screen.getByTitle("New slide")));
     await act(async () => fireEvent.click(screen.getByTitle("Add blank slide")));
     expect(invoke).toHaveBeenCalledWith("add_slide", { id: "talk", after: null });
     expect(useApp.getState().selected).toBe("slide");
@@ -101,6 +104,24 @@ describe("SlideRail", () => {
     expect(invoke).toHaveBeenCalledWith("delete_slide", { id: "talk", slide: "#2" });
     expect(useApp.getState().selected).toBe("outro");
     expect(items()).toHaveLength(2);
+  });
+
+  it("deleting a slide drops its sketch", async () => {
+    const stroke = { tool: "pen" as const, color: "#ef4444", points: [[0.1, 0.2]] as [number, number][] };
+    useApp.setState({ sketches: { intro: [stroke], outro: [stroke] } });
+    invoke.mockResolvedValue(withSlides("intro", "#2"));
+    render(<SlideRail />);
+    await act(async () => fireEvent.click(item(2).getByTitle("Delete")));
+    expect(useApp.getState().sketches).toEqual({ intro: [stroke] });
+  });
+
+  it("keeps the sketch when deleting fails", async () => {
+    const stroke = { tool: "pen" as const, color: "#ef4444", points: [[0.1, 0.2]] as [number, number][] };
+    useApp.setState({ sketches: { outro: [stroke] } });
+    invoke.mockRejectedValue("Slide not found: outro");
+    render(<SlideRail />);
+    await act(async () => fireEvent.click(item(2).getByTitle("Delete")));
+    expect(useApp.getState().sketches).toEqual({ outro: [stroke] });
   });
 
   it("deleting the last slide selects the one before it", async () => {
@@ -126,13 +147,20 @@ describe("SlideRail", () => {
   });
 
   it.each([
-    ["Add blank slide", () => screen.getByTitle("Add blank slide")],
+    [
+      "Add blank slide",
+      () => {
+        fireEvent.click(screen.getByTitle("New slide"));
+        return screen.getByTitle("Add blank slide");
+      },
+    ],
     ["Duplicate", () => item(0).getByTitle("Duplicate")],
     ["Delete", () => item(0).getByTitle("Delete")],
   ])("reports a failed %s", async (_, button) => {
     invoke.mockRejectedValue("Slide not found: intro");
     render(<SlideRail />);
-    await act(async () => fireEvent.click(button()));
+    const target = button();
+    await act(async () => fireEvent.click(target));
     await waitFor(() => expect(useApp.getState().error).toBe("Slide not found: intro"));
     expect(useApp.getState().deck).toEqual(DECK);
   });
@@ -187,6 +215,57 @@ describe("hidden slides in the rail", () => {
     await act(async () => fireEvent.click(within(items()[0]!).getByTitle("Hide slide")));
     expect(useApp.getState().error).toBe("disk full");
     expect(useApp.getState().deck?.slides[0]?.hidden).toBe(false);
+  });
+});
+
+const LOCKED_HTML = DECK_HTML.replace(`id="outro"`, `id="outro" data-locked`);
+
+describe("locked slides in the rail", () => {
+  beforeEach(() => {
+    useApp.setState({ deck: deckFor(LOCKED_HTML) });
+  });
+
+  it("marks locked slides and offers to unlock them", () => {
+    render(<SlideRail />);
+    expect(item(2).getByTestId("locked-mark")).toBeTruthy();
+    expect(item(2).getByTitle("Unlock slide")).toBeTruthy();
+    expect(item(0).queryByTestId("locked-mark")).toBeNull();
+    expect(item(0).getByTitle("Lock slide")).toBeTruthy();
+  });
+
+  it("cannot delete a locked slide, but can still duplicate and hide it", () => {
+    render(<SlideRail />);
+    expect(item(2).queryByTitle("Delete")).toBeNull();
+    expect(item(2).getByTitle("Duplicate")).toBeTruthy();
+    expect(item(2).getByTitle("Hide slide")).toBeTruthy();
+    expect(item(0).getByTitle("Delete")).toBeTruthy();
+  });
+
+  it("locks a slide", async () => {
+    const next = deckFor(LOCKED_HTML.replace(`id="intro"`, `id="intro" data-locked`), "2");
+    invoke.mockResolvedValue(next);
+    render(<SlideRail />);
+    await act(async () => fireEvent.click(item(0).getByTitle("Lock slide")));
+    expect(invoke).toHaveBeenCalledWith("set_slide_locked", { id: "talk", slide: "intro", locked: true });
+    expect(useApp.getState().deck).toBe(next);
+    expect(item(0).getByTestId("locked-mark")).toBeTruthy();
+    expect(item(0).queryByTitle("Delete")).toBeNull();
+  });
+
+  it("unlocks a slide", async () => {
+    invoke.mockResolvedValue(deckFor(DECK_HTML, "2"));
+    render(<SlideRail />);
+    await act(async () => fireEvent.click(item(2).getByTitle("Unlock slide")));
+    expect(invoke).toHaveBeenCalledWith("set_slide_locked", { id: "talk", slide: "outro", locked: false });
+    expect(screen.queryByTestId("locked-mark")).toBeNull();
+    expect(item(2).getByTitle("Delete")).toBeTruthy();
+  });
+
+  it("reports a failed lock", async () => {
+    invoke.mockRejectedValue("disk full");
+    render(<SlideRail />);
+    await act(async () => fireEvent.click(item(0).getByTitle("Lock slide")));
+    expect(useApp.getState().error).toBe("disk full");
   });
 });
 

@@ -1,12 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cn, deckFileUrl, relativeTime, slideUrl } from "./utils";
+import { cn, deckFileUrl, layoutLabel, relativeTime, slideUrl, templateSlideUrl } from "./utils";
 
 describe("cn", () => {
   it("joins truthy classes and lets later Tailwind classes win", () => {
     expect(cn("p-1", false, null, undefined, "text-sm")).toBe("p-1 text-sm");
     expect(cn("p-1 text-xs", "p-2")).toBe("text-xs p-2");
     expect(cn({ hidden: true, block: false })).toBe("hidden");
+  });
+});
+
+describe("templates", () => {
+  it("builds still previews of a template's slides", () => {
+    expect(templateSlideUrl("bento-grid", "stats")).toBe("/__deck/.template/bento-grid/deck.html?embed&slide=stats&static");
+    expect(templateSlideUrl("my style", "#1")).toBe("/__deck/.template/my%20style/deck.html?embed&slide=%231&static");
+  });
+
+  it("names layouts after their slide ids", () => {
+    expect(layoutLabel("pricing-tiers")).toBe("Pricing tiers");
+    expect(layoutLabel("quote")).toBe("Quote");
+    expect(layoutLabel("big_number")).toBe("Big number");
+    expect(layoutLabel("---")).toBe("---");
   });
 });
 

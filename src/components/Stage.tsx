@@ -1,10 +1,11 @@
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Maximize, Pencil, Redo2, Sparkles, Trash2, Undo2, Wand2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, LayoutTemplate, Lock, Maximize, Pencil, Redo2, Sparkles, Trash2, Undo2, Wand2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { SKETCH_TARGET_ATTR, useApp } from "../store";
 import { AnnotationLayer, useAnnotations } from "./PresenterTools";
 import { SketchToolbar } from "./SketchToolbar";
 import { SlideFrame, useSlideVersion } from "./SlideFrame";
+import { LayoutPicker, Popover } from "./Templates";
 import type { Slide } from "../lib/api";
 import { zoomBox, type Stroke } from "../lib/ink";
 import { cn } from "../lib/utils";
@@ -64,9 +65,15 @@ export function Stage() {
     useApp.getState().setEditing(!editing);
   };
 
+  const index = deck?.slides.findIndex((s) => s.id === selected) ?? -1;
+  const slide = deck?.slides[index];
+  const locked = !!slide?.locked;
+  // A locked slide cannot be edited: going to one, or locking this one, leaves edit mode.
+  useEffect(() => {
+    if (locked && editing) useApp.getState().setEditing(false);
+  }, [locked, editing]);
+
   if (!deck) return null;
-  const index = deck.slides.findIndex((s) => s.id === selected);
-  const slide = deck.slides[index];
 
   return (
     <div className="flex h-full flex-col bg-canvas">
@@ -114,11 +121,16 @@ export function Stage() {
                 <button
                   type="button"
                   aria-label="Edit text and move elements"
-                  title="Edit the slide: click to select, drag to move, drag the handles to scale or rotate, double-click to edit text"
+                  title={
+                    locked
+                      ? "This slide is locked; unlock it in the slide list to edit it"
+                      : "Edit the slide: click to select, drag to move, drag the handles to scale or rotate, double-click to edit text"
+                  }
                   aria-pressed={editing}
+                  disabled={locked}
                   onClick={toggleEditing}
                   className={cn(
-                    "rounded-md p-1 hover:bg-accent hover:text-foreground [&_svg]:size-4",
+                    "rounded-md p-1 hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30 [&_svg]:size-4",
                     editing && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
                   )}
                 >
@@ -177,11 +189,21 @@ export function Stage() {
                 Overflow
               </span>
             )}
+            {locked && (
+              <span
+                title="Locked: neither you nor the agent can change this slide. Unlock it in the slide list."
+                className="mr-1 flex items-center gap-1 rounded-md px-1.5 py-1"
+              >
+                <Lock className="size-3.5" />
+                Locked
+              </span>
+            )}
+            {slide && <ChangeLayoutButton disabled={running || locked} />}
             {slide && (
               <button
                 type="button"
-                title="Ask the agent to rebuild this slide's layout, fixing overflow and clipping and keeping the elements you moved, rotated or scaled, using a screenshot"
-                disabled={running}
+                title="Prepare a message, with a screenshot, asking the agent to rebuild this slide's layout, fixing overflow and clipping and keeping the elements you moved, rotated or scaled"
+                disabled={running || locked}
                 onClick={() => {
                   editFrames.clearSelection();
                   // Give the preview a frame to drop its selection outline before the screenshot.
@@ -200,6 +222,33 @@ export function Stage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Opens the template layouts, to have the agent rebuild the current slide on one. */
+function ChangeLayoutButton(props: { disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        title="Rebuild this slide on a template layout"
+        aria-expanded={open}
+        disabled={props.disabled}
+        onClick={() => setOpen((v) => !v)}
+        className="mr-1 flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      >
+        <LayoutTemplate className="size-3.5" />
+        Layout
+      </button>
+      {open && (
+        <Popover anchor={buttonRef} placement="above" width={560} label="Change layout" onClose={() => setOpen(false)}>
+          <LayoutPicker mode="change" onDone={() => setOpen(false)} />
+        </Popover>
+      )}
+    </>
   );
 }
 

@@ -1,7 +1,8 @@
 //! `slop://` URI scheme. Serves deck files to the editor's slide iframes as
 //! `slop://localhost/<deck-id>/<path>` (`http://slop.localhost/...` on Windows), so the
 //! deck's relative `assets/…` references resolve exactly as they do when the file is opened
-//! in a browser.
+//! in a browser. Templates (see [`templates`]) are served the same way, as
+//! `slop://localhost/.template/<template-id>/<path>`, for the layout and style previews.
 //!
 //! With `?pan` in the query, deck.html is served with the pasteboard (`assets/pasteboard.js`)
 //! added, so the stage can pan and zoom around the slide. With `?edit`, it also gets the slide
@@ -18,6 +19,11 @@ use tauri::http::{header, Request, Response, StatusCode};
 use tauri::AppHandle;
 
 use crate::deck;
+use crate::templates;
+
+/// First path segment of template files: `/.template/<template-id>/deck.html`. The app never
+/// names a deck folder like this (deck ids are slugs).
+const TEMPLATE_PREFIX: &str = ".template";
 
 const PASTEBOARD_JS: &str = include_str!("../assets/pasteboard.js");
 const EDITOR_JS: &str = include_str!("../assets/editor.js");
@@ -51,6 +57,11 @@ pub fn handle(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Cow<'stati
 
 fn serve(app: &AppHandle, raw_path: &str) -> Result<(&'static str, Vec<u8>), StatusCode> {
     let (deck_id, rel) = split_path(raw_path)?;
+    if deck_id == TEMPLATE_PREFIX {
+        let (template, rel) = rel.split_once('/').ok_or(StatusCode::NOT_FOUND)?;
+        let root = templates::user_root(app).map_err(|_| StatusCode::NOT_FOUND)?;
+        return templates::read_file(&root, template, rel).ok_or(StatusCode::NOT_FOUND);
+    }
     let dir = deck::deck_dir(app, &deck_id).map_err(|_| StatusCode::NOT_FOUND)?;
     read_in_deck(&dir, &rel)
 }

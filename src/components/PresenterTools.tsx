@@ -7,6 +7,11 @@ import {
   INK_COLORS,
   INK_STYLE,
   isDot,
+  LASER_GLOW,
+  LASER_RGB,
+  LASER_SIZE,
+  paintTrails,
+  pruneTrails,
   strokePath,
   TOOL_KEYS,
   toFraction,
@@ -14,11 +19,14 @@ import {
   type InkTool,
   type Stroke,
   type Tool,
+  type TrailPoint,
+  visibleArea,
 } from "../lib/ink";
 import { cn } from "../lib/utils";
 
 /** How long the toolbar stays visible after a keyboard shortcut changes something. */
 const PEEK_MS = 1500;
+const laserShadow = LASER_GLOW.map((g) => `0 0 ${g.blur}px ${g.spread}px rgb(${LASER_RGB} / ${g.opacity})`).join(", ");
 
 export interface Annotations {
   tool: Tool;
@@ -90,7 +98,8 @@ export function useAnnotations(slideKey: string, store?: InkStore): Annotations 
 }
 
 /**
- * Transparent layer over the slide that draws ink and the laser dot. `zoom` is how far the
+ * Transparent layer over the slide that draws ink, the laser dot and, while the laser is
+ * dragged, its trail, which stays a moment and then thins away. `zoom` is how far the
  * layer has been enlarged along with a zoomed slide: the ink is drawn at that size, as
  * vectors, so it stays sharp, and thickens with the slide.
  */
@@ -99,6 +108,11 @@ export function AnnotationLayer({ annotations, zoom = 1 }: { annotations: Annota
   const layerRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<Stroke | null>(null);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
+  const [trails, setTrails] = useState<TrailPoint[][]>([]);
+  const [now, setNow] = useState(() => performance.now());
+  const tracing = useRef(false);
+  const trailRef = useRef<HTMLCanvasElement>(null);
+  const trailCore = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const active = tool !== "pointer";
 
@@ -121,7 +135,53 @@ export function AnnotationLayer({ annotations, zoom = 1 }: { annotations: Annota
   useEffect(() => {
     setDraft(null);
     setLaser(null);
+    setTrails([]);
+    tracing.current = false;
   }, [tool]);
+
+  // Animate trails until the last one has faded.
+  const fading = trails.length > 0;
+  useEffect(() => {
+    if (!fading) return;
+    let frame = requestAnimationFrame(function tick() {
+      const time = performance.now();
+      setNow(time);
+      setTrails((t) => pruneTrails(t, time));
+      frame = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [fading]);
+
+  // The trail is painted on a canvas rather than drawn as glowing SVG: WebKit leaves stale,
+  // clipped pieces of a filtered SVG's glow behind as it changes.
+  useLayoutEffect(() => {
+    const canvas = trailRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    const scale = window.devicePixelRatio || 1;
+    const core = (trailCore.current ??= document.createElement("canvas"));
+    const coreCtx = core.getContext("2d");
+    if (!coreCtx) return;
+    // Only the part of the layer on screen gets a canvas: zoomed in, the layer is many times
+    // the screen's size, and glowing a canvas that big every frame makes the trail crawl.
+    const { left, top } = layerRef.current!.getBoundingClientRect();
+    const area = visibleArea(
+      { left, top, width: size.width, height: size.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    Object.assign(canvas.style, {
+      left: `${area.x}px`,
+      top: `${area.y}px`,
+      width: `${area.width}px`,
+      height: `${area.height}px`,
+    });
+    for (const c of [canvas, core]) {
+      const [w, h] = [Math.round(area.width * scale), Math.round(area.height * scale)];
+      if (c.width !== w) c.width = w;
+      if (c.height !== h) c.height = h;
+    }
+    paintTrails(ctx, coreCtx, trails, now, size.width, size.height, scale, area);
+  }, [trails, now, size]);
 
   const at = (event: ReactPointerEvent) =>
     toFraction(event.clientX, event.clientY, layerRef.current!.getBoundingClientRect());
@@ -131,8 +191,31 @@ export function AnnotationLayer({ annotations, zoom = 1 }: { annotations: Annota
     if (hit) erase(Number(hit.getAttribute("data-stroke")));
   };
 
+  const tracePoint = (event: ReactPointerEvent): TrailPoint => {
+    const [x, y] = at(event);
+    return { x, y, t: performance.now() };
+  };
+
+  /**
+   * Where the pointer went since the last move, as fractions of the layer: the browser hands
+   * out one move per frame, but keeps the samples in between, which a fast stroke needs.
+   */
+  const movedThrough = (event: ReactPointerEvent): [number, number][] => {
+    const rect = layerRef.current!.getBoundingClientRect();
+    const samples = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    return (samples.length ? samples : [event]).map((e) => toFraction(e.clientX, e.clientY, rect));
+  };
+
   const onPointerDown = (event: ReactPointerEvent) => {
     if (event.button !== 0) return;
+    if (tool === "laser") {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      tracing.current = true;
+      const point = tracePoint(event);
+      setNow(point.t);
+      setTrails((t) => [...t, [point]]);
+      return;
+    }
     if (tool === "eraser") eraseUnder(event);
     if (tool !== "pen" && tool !== "highlighter") return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -143,17 +226,25 @@ export function AnnotationLayer({ annotations, zoom = 1 }: { annotations: Annota
     if (tool === "laser") {
       const rect = layerRef.current!.getBoundingClientRect();
       setLaser({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+      if (tracing.current && event.buttons & 1) {
+        const t = performance.now();
+        const points = movedThrough(event).map(([x, y]) => ({ x, y, t }));
+        setNow(t);
+        // The trail being drawn may have faded away entirely while the pointer rested.
+        setTrails((ts) => (ts.length ? [...ts.slice(0, -1), [...ts[ts.length - 1]!, ...points]] : [points]));
+      }
     } else if (tool === "eraser" && event.buttons & 1) {
       eraseUnder(event);
     } else if (draft) {
-      const point = at(event);
-      setDraft((d) => d && { ...d, points: [...d.points, point] });
+      const points = movedThrough(event);
+      setDraft((d) => d && { ...d, points: [...d.points, ...points] });
     }
   };
 
   const finish = () => {
     if (draft) addStroke(draft);
     setDraft(null);
+    tracing.current = false;
   };
 
   return (
@@ -203,15 +294,14 @@ export function AnnotationLayer({ annotations, zoom = 1 }: { annotations: Annota
           );
         })}
       </svg>
+      {trails.length > 0 && (
+        <canvas ref={trailRef} data-testid="laser-trail" className="pointer-events-none absolute" />
+      )}
       {laser && (
         <div
           data-testid="laser"
-          className="pointer-events-none absolute size-4 -translate-1/2 rounded-full bg-red-500"
-          style={{
-            left: laser.x,
-            top: laser.y,
-            boxShadow: "0 0 8px 4px rgb(239 68 68 / 70%), 0 0 24px 10px rgb(239 68 68 / 35%)",
-          }}
+          className="pointer-events-none absolute -translate-1/2 rounded-full bg-red-500"
+          style={{ left: laser.x, top: laser.y, width: LASER_SIZE, height: LASER_SIZE, boxShadow: laserShadow }}
         />
       )}
     </div>

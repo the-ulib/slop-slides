@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pixel Art</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap");
+
+    /* Layouts shared by every SlopSlide template: title, section, bullets, split, stats,
+       quote, closing. The style below this block gives them their look. */
+    .slide {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 120px 140px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 32px;
+      line-height: 1.4;
+    }
+    .slide h1, .slide h2, .slide p, .slide ul, .slide blockquote, .slide figure { margin: 0; }
+    .slide h1, .slide h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.04; }
+    .slide h1 { font-size: 128px; }
+    .slide h2 { font-size: 88px; }
+    .slide .deco { position: absolute; inset: 0; pointer-events: none; }
+    .slide .deco span { position: absolute; display: block; }
+    .slide .frame { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 32px; max-width: 1400px; }
+    .slide .eyebrow { font-size: 26px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+    .slide .lede { font-size: 40px; color: var(--muted); max-width: 1200px; }
+    .slide .byline { font-size: 26px; color: var(--muted); }
+    .slide .number { font-family: var(--font-display); font-size: 160px; line-height: 1; color: var(--accent); }
+    .layout-bullets, .layout-stats { justify-content: flex-start; gap: 72px; }
+    .slide .frame-head { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 20px; max-width: 1400px; }
+    .slide .points { position: relative; display: flex; flex-direction: column; gap: 36px; max-width: 1450px; padding: 0; list-style: none; }
+    .slide .points li { position: relative; padding-left: 52px; font-size: 38px; color: var(--muted); }
+    .slide .points li::before { content: ""; position: absolute; left: 0; top: 0.5em; width: 20px; height: 20px; background: var(--accent); }
+    .slide .points strong { color: var(--ink); }
+    .layout-split { flex-direction: row; align-items: center; gap: 100px; }
+    .slide .text { position: relative; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 32px; }
+    .slide .body { font-size: 34px; color: var(--muted); }
+    .slide .visual { position: relative; flex: 0 0 720px; height: 720px; }
+    .slide .placeholder { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--panel); color: var(--muted); font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .slide .stats { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 56px; }
+    .slide .stat { display: flex; flex-direction: column; gap: 16px; }
+    .slide .value { font-family: var(--font-display); font-size: 150px; font-weight: 700; line-height: 1; color: var(--accent); }
+    .slide .label { font-size: 30px; color: var(--muted); }
+    .layout-quote { align-items: flex-start; gap: 48px; }
+    .layout-quote blockquote { position: relative; max-width: 1500px; font-family: var(--font-display); font-size: 80px; line-height: 1.15; }
+    .slide .cite { position: relative; font-size: 30px; color: var(--muted); }
+    .layout-closing h2 { font-size: 160px; }
+
+    /* Pixel Art */
+    :root {
+      --bg: #1d1b3a;
+      --ink: #fff1e8;
+      --muted: #c2c3c7;
+      --accent: #ffec27;
+      --red: #ff004d;
+      --blue: #29adff;
+      --green: #00e436;
+      --panel: #2a2850;
+      --font-display: "Press Start 2P", "Courier New", monospace;
+      --font-body: "VT323", "Courier New", monospace;
+      --pixel-border: 0 -8px 0 0 #fff1e8, 0 8px 0 0 #fff1e8, -8px 0 0 0 #fff1e8, 8px 0 0 0 #fff1e8, 0 16px 0 0 #0b0a1f;
+    }
+    .slide { background: linear-gradient(transparent 0 85%, #3b7a3b 85% 88%, #6b3d2e 88%), var(--bg); font-size: 44px; line-height: 1.15; image-rendering: pixelated; }
+    .slide h1, .slide h2 { font-weight: 400; line-height: 1.3; text-shadow: 8px 8px 0 #0b0a1f; }
+    .slide h1 { font-size: 80px; color: var(--accent); }
+    .slide h2 { font-size: 52px; }
+    .slide .deco span:nth-child(1) { left: 200px; top: 120px; width: 8px; height: 8px; background: #fff; box-shadow: 300px 40px #fff, 700px -40px #fff, 1100px 60px #fff, 1450px 10px #fff, 1580px 200px #fff, 500px 300px #fff, 900px 220px #fff, 1300px 340px #fff; }
+    .slide .deco span:nth-child(2) { right: 220px; top: 140px; width: 160px; height: 160px; background: var(--accent); box-shadow: 0 0 0 8px #ffa300; clip-path: polygon(16px 0, calc(100% - 16px) 0, calc(100% - 16px) 16px, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 16px calc(100% - 16px), 0 calc(100% - 16px), 0 16px, 16px 16px); }
+    .slide .deco span:nth-child(3) { left: 0; right: 0; bottom: 162px; height: 16px; background: repeating-linear-gradient(90deg, var(--green) 0 32px, #00a32a 32px 64px); }
+    .slide .eyebrow { font-family: var(--font-display); font-size: 22px; color: var(--blue); letter-spacing: 0.06em; }
+    .slide .lede, .slide .body { font-size: 48px; color: var(--muted); }
+    .slide .byline { font-size: 36px; }
+    .slide .number { font-size: 96px; color: var(--red); text-shadow: 8px 8px 0 #0b0a1f; }
+    .layout-title .frame, .layout-section .frame, .layout-closing .frame { padding-bottom: 120px; }
+    .slide .points { gap: 28px; }
+    .slide .points li { font-size: 48px; padding-left: 64px; }
+    .slide .points li::before { content: "►"; width: auto; height: auto; top: 0; background: none; color: var(--accent); font-family: var(--font-display); font-size: 28px; line-height: 1.7; }
+    .slide .points strong { color: var(--accent); }
+    .slide .visual { flex-basis: 640px; height: 560px; margin-bottom: 120px; }
+    .slide .visual .placeholder { background: var(--panel); box-shadow: var(--pixel-border); font-family: var(--font-display); font-size: 18px; color: var(--accent); }
+    .layout-stats .stats { gap: 64px; }
+    .slide .stat { padding: 32px; background: var(--panel); box-shadow: var(--pixel-border); }
+    .slide .stat:nth-child(2) .value { color: var(--blue); }
+    .slide .stat:nth-child(3) .value { color: var(--green); }
+    .slide .value { font-size: 72px; font-weight: 400; line-height: 1.3; }
+    .slide .label { font-size: 36px; }
+    .layout-quote blockquote { font-family: var(--font-body); font-size: 80px; line-height: 1.05; padding: 48px; background: var(--panel); box-shadow: var(--pixel-border); }
+    .slide .cite { font-size: 40px; color: var(--accent); }
+    .layout-closing h2 { font-size: 96px; color: var(--red); }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide layout-title" id="title">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <p class="eyebrow reveal">PLAYER 1 · 2026</p>
+        <h1 class="reveal reveal-delay-1">Presentation title</h1>
+        <p class="lede reveal reveal-delay-2">A one-line subtitle that frames the story you are about to tell.</p>
+        <p class="byline reveal reveal-delay-3">Presenter name · Event or date</p>
+      </div>
+    </section>
+    <section class="slide layout-section" id="section">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <p class="number reveal">LV 01</p>
+        <h2 class="reveal reveal-delay-1">Section title</h2>
+        <p class="lede reveal reveal-delay-2">What this part of the talk covers, in one sentence.</p>
+      </div>
+    </section>
+    <section class="slide layout-bullets" id="bullets">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <header class="frame-head">
+        <p class="eyebrow reveal">Key points</p>
+        <h2 class="reveal reveal-delay-1">A headline that states the point</h2>
+      </header>
+      <ul class="points">
+        <li class="reveal reveal-delay-2"><strong>First idea.</strong> One short line of supporting detail.</li>
+        <li class="reveal reveal-delay-3"><strong>Second idea.</strong> Keep each point to a single thought.</li>
+        <li class="reveal reveal-delay-4"><strong>Third idea.</strong> Three to five points read best.</li>
+      </ul>
+    </section>
+    <section class="slide layout-split" id="split">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="text">
+        <p class="eyebrow reveal">Context</p>
+        <h2 class="reveal reveal-delay-1">Words on one side, a visual on the other</h2>
+        <p class="body reveal reveal-delay-2">Two or three sentences that explain the picture. Swap the placeholder for a photo, chart, or diagram.</p>
+      </div>
+      <figure class="visual reveal reveal-delay-2">
+        <div class="placeholder"><span>Image or diagram</span></div>
+      </figure>
+    </section>
+    <section class="slide layout-stats" id="stats">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <header class="frame-head">
+        <p class="eyebrow reveal">By the numbers</p>
+        <h2 class="reveal reveal-delay-1">Three figures that tell the story</h2>
+      </header>
+      <div class="stats">
+        <div class="stat reveal reveal-delay-2"><span class="value">42%</span><span class="label">What the first number measures</span></div>
+        <div class="stat reveal reveal-delay-3"><span class="value">3.5×</span><span class="label">What the second number measures</span></div>
+        <div class="stat reveal reveal-delay-4"><span class="value">120</span><span class="label">What the third number measures</span></div>
+      </div>
+    </section>
+    <section class="slide layout-quote" id="quote">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <blockquote class="reveal">“A memorable line from a customer, an expert, or the team that makes the point land.”</blockquote>
+      <p class="cite reveal reveal-delay-1">Name Surname, Role at Company</p>
+    </section>
+    <section class="slide layout-closing" id="closing">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <h2 class="reveal">GAME OVER?</h2>
+        <p class="lede reveal reveal-delay-1">Questions, next steps, or a call to action.</p>
+        <p class="byline reveal reveal-delay-2">name@company.com · company.com</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

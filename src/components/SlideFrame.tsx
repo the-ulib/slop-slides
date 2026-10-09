@@ -23,6 +23,8 @@ interface SlideFrameProps {
   arena?: { width: number; height: number };
   className?: string;
   onFrameReady?: (frame: HTMLIFrameElement) => void;
+  /** Loads this URL instead of the deck's slide (e.g. a template's, see `templateSlideUrl`). */
+  url?: string;
 }
 
 /**
@@ -30,8 +32,8 @@ interface SlideFrameProps {
  * fill its (16:9) container. When the slide changes, the new version loads behind the
  * current one and swaps in once painted, so edits stream in without white flashes.
  */
-export function SlideFrame({ deckId, slideId, version, thumbnail, editKey, arena, className, onFrameReady }: SlideFrameProps) {
-  const src = slideUrl(deckId, slideId, version, thumbnail || editKey !== undefined, editKey, arena !== undefined && !thumbnail);
+export function SlideFrame({ deckId, slideId, version, thumbnail, editKey, arena, className, onFrameReady, url }: SlideFrameProps) {
+  const src = url ?? slideUrl(deckId, slideId, version, thumbnail || editKey !== undefined, editKey, arena !== undefined && !thumbnail);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);

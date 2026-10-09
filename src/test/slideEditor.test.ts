@@ -323,9 +323,9 @@ describe("slide editor", () => {
       e.down(h1);
       e.up(h1);
       const ui = e.$("[data-slop-ui]");
-      /** "rotate", or a stretch handle by direction from the center, like "1 1" (bottom right). */
+      /** "rotate", "tilt", or a stretch handle by direction from the center, like "1 1" (bottom right). */
       const handle = (kind: string) =>
-        ui.querySelector<HTMLElement>(kind === "rotate" ? `[data-handle="rotate"]` : `[data-dir="${kind}"]`)!;
+        ui.querySelector<HTMLElement>(/^[a-z]+$/.test(kind) ? `[data-handle="${kind}"]` : `[data-dir="${kind}"]`)!;
       const pointer = (type: string, target: Element, x: number, y: number, init: PointerEventInit = {}) =>
         target.dispatchEvent(
           new e.window.PointerEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true, cancelable: true, ...init }),
@@ -464,6 +464,76 @@ describe("slide editor", () => {
       expect(h1.style.rotate).toBe("100deg");
       pull("rotate", [600, 300], [500, 200]);
       expect(h1.hasAttribute("style")).toBe(false);
+      expect(h1.hasAttribute("data-moved")).toBe(false);
+    });
+
+    it("tilts the selection in 3D with perspective, the side pulled towards turning away", () => {
+      const { e, h1, ui, pull } = withHeading();
+      // Right by 60px and up by 20px: around the vertical axis by 30°, the horizontal by 10°.
+      pull("tilt", [520, 200], [580, 180]);
+      expect(h1.style.transform).toBe("perspective(1000px) rotateX(10deg) rotateY(30deg)");
+      expect(h1.style.getPropertyPriority("transform")).toBe("important");
+      expect(h1.hasAttribute("data-moved")).toBe(true);
+      // The frame and stretch handles tilt along; the rotate and tilt handles stay flat.
+      const plane = ui.querySelector<HTMLElement>("[data-plane]")!;
+      expect(plane.style.transform).toBe("perspective(1000px) rotateX(10deg) rotateY(30deg)");
+      expect(plane.querySelectorAll('[data-handle="scale"]')).toHaveLength(8);
+      expect(plane.querySelector('[data-handle="rotate"], [data-handle="tilt"]')).toBeNull();
+      expect(ui.style.transform).toBe("rotate(0deg)");
+      const [commit] = e.commits();
+      expect(commit!.markup).toContain(
+        `style="transform: perspective(1000px) rotateX(10deg) rotateY(30deg) !important;" data-moved="">Hello`,
+      );
+      // Further from where it was, snapping each axis to 15° with Shift.
+      pull("tilt", [520, 200], [520, 160], { shiftKey: true });
+      expect(h1.style.transform).toBe("perspective(1000px) rotateX(30deg) rotateY(30deg)");
+      expect(e.commits()).toHaveLength(2);
+    });
+
+    it("tilts along a rotated element's own axes, and keeps its rotation", () => {
+      const { h1, pull } = withHeading();
+      h1.style.rotate = "90deg";
+      // Turned a quarter, dragging down pulls towards the element's right side.
+      pull("tilt", [520, 200], [520, 240]);
+      expect(h1.getAttribute("style")).toBe(
+        "rotate: 90deg; transform: perspective(1000px) rotateX(0deg) rotateY(20deg) !important;",
+      );
+    });
+
+    it("drops the tilt when turned back or the tilt handle is double-clicked", () => {
+      const { e, h1, handle, pull } = withHeading();
+      pull("tilt", [520, 200], [580, 200]);
+      pull("tilt", [580, 200], [520, 200]);
+      expect(h1.hasAttribute("style")).toBe(false);
+      expect(h1.hasAttribute("data-moved")).toBe(false);
+      pull("tilt", [520, 200], [520, 300]);
+      pull("rotate", [500, 200], [600, 300]);
+      handle("tilt").dispatchEvent(new e.window.MouseEvent("dblclick", { bubbles: true }));
+      expect(h1.getAttribute("style")).toBe("rotate: 90deg;");
+      expect(e.$("[data-plane]").style.transform).toBe("");
+    });
+
+    it("keeps a transform the element already had, behind the tilt", () => {
+      const { e, h1, pull } = withHeading();
+      const sheet = e.doc.createElement("style");
+      sheet.textContent = ".title { transform: translateX(-50%); }";
+      e.doc.head.appendChild(sheet);
+      pull("tilt", [520, 200], [550, 200]);
+      expect(h1.style.transform).toBe("perspective(1000px) rotateX(0deg) rotateY(15deg) translateX(-50%)");
+      pull("tilt", [550, 200], [520, 200]);
+      expect(h1.hasAttribute("style")).toBe(false);
+      // Nothing to keep from the identity matrix a finished entrance animation leaves.
+      sheet.textContent = ".title { transform: matrix(1, 0, 0, 1, 0, 0); }";
+      pull("tilt", [520, 200], [550, 200]);
+      expect(h1.style.transform).toBe("perspective(1000px) rotateX(0deg) rotateY(15deg)");
+      pull("tilt", [550, 200], [520, 200]);
+      expect(h1.hasAttribute("style")).toBe(false);
+      // A transform set inline by the deck stays inline.
+      h1.setAttribute("style", "transform: scaleX(-1)");
+      pull("tilt", [520, 200], [550, 200]);
+      expect(h1.style.transform).toBe("perspective(1000px) rotateX(0deg) rotateY(15deg) scaleX(-1)");
+      pull("tilt", [550, 200], [520, 200]);
+      expect(h1.getAttribute("style")).toBe("transform: scaleX(-1);");
       expect(h1.hasAttribute("data-moved")).toBe(false);
     });
 

@@ -19,7 +19,7 @@ vi.mock("@tauri-apps/api/webview", () => ({
 }));
 
 import type { ProviderInfo } from "../lib/models";
-import { flushReviewSave, useApp, type AssistantMessage, type ChatMessage, type ChatPart } from "../store";
+import { flushReviewSave, TIDY_PROMPT, useApp, type AssistantMessage, type ChatMessage, type ChatPart } from "../store";
 import { DECK_HTML, deckFor } from "../test/fixtures";
 import { ChatPanel } from "./ChatPanel";
 
@@ -53,7 +53,7 @@ const compact = vi.fn(async () => {});
 afterEach(() => flushReviewSave());
 
 beforeEach(() => {
-  invoke.mockReset();
+  invoke.mockReset().mockResolvedValue([]);
   openDialog.mockReset();
   unlistenDragDrop.mockReset();
   dragDrop = null;
@@ -161,6 +161,70 @@ describe("ChatPanel: empty chat", () => {
 });
 
 describe("ChatPanel: composing", () => {
+  const resizeHandle = () => screen.getByRole("separator", { name: "Resize message input" });
+  const dragInput = (from: number, to: number, finish = "pointerup") => {
+    const handle = resizeHandle();
+    handle.setPointerCapture = vi.fn();
+    handle.hasPointerCapture = () => true;
+    handle.releasePointerCapture = vi.fn();
+    for (const [event, y] of [["pointerdown", from], ["pointermove", to], [finish, to]] as const) {
+      fireEvent(handle, new MouseEvent(event, { bubbles: true, button: 0, clientY: y }));
+    }
+  };
+
+  it("allows vertical resizing and keeps the chosen height when editing or sending", () => {
+    render(<ChatPanel />);
+    const input = textarea();
+    vi.spyOn(input, "getBoundingClientRect").mockReturnValue({ height: 80 } as DOMRect);
+    dragInput(400, 300);
+    expect(input.style.height).toBe("180px");
+    type("Make it blue");
+    expect(input.style.height).toBe("180px");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.style.height).toBe("180px");
+    expect(input.value).toBe("");
+  });
+
+  it("shrinks by dragging down and stops resizing after release or cancellation", () => {
+    render(<ChatPanel />);
+    const input = textarea();
+    vi.spyOn(input, "getBoundingClientRect").mockReturnValue({ height: 180 } as DOMRect);
+    dragInput(300, 360);
+    expect(input.style.height).toBe("120px");
+    fireEvent(resizeHandle(), new MouseEvent("pointermove", { bubbles: true, clientY: 100 }));
+    expect(input.style.height).toBe("120px");
+    dragInput(300, 380, "pointercancel");
+    fireEvent(resizeHandle(), new MouseEvent("pointermove", { bubbles: true, clientY: 100 }));
+    expect(input.style.height).toBe("100px");
+  });
+
+  it("limits resizing and supports the keyboard", () => {
+    render(<ChatPanel />);
+    const input = textarea();
+    vi.spyOn(input, "getBoundingClientRect").mockReturnValue({ height: 80 } as DOMRect);
+    dragInput(400, -1000);
+    expect(input.style.height).toBe("240px");
+    dragInput(400, 1000);
+    expect(input.style.height).toBe("64px");
+    fireEvent.keyDown(resizeHandle(), { key: "ArrowUp" });
+    expect(input.style.height).toBe("96px");
+    fireEvent.keyDown(resizeHandle(), { key: "End" });
+    expect(input.style.height).toBe("240px");
+    fireEvent.keyDown(resizeHandle(), { key: "Home" });
+    expect(input.style.height).toBe("64px");
+  });
+
+  it("still grows automatically with the draft until manually resized", () => {
+    render(<ChatPanel />);
+    const input = textarea();
+    Object.defineProperty(input, "scrollHeight", { configurable: true, value: 120 });
+    type("A longer draft");
+    expect(input.style.height).toBe("120px");
+    Object.defineProperty(input, "scrollHeight", { configurable: true, value: 300 });
+    type("An even longer draft");
+    expect(input.style.height).toBe("240px");
+  });
+
   it("sends on Enter with the current slide and clears the draft", () => {
     render(<ChatPanel />);
     type("  Make it blue  ");
@@ -360,12 +424,14 @@ describe("ChatPanel: attachments", () => {
     render(<ChatPanel />);
     await act(async () => fireEvent.click(screen.getByTitle("Attach images or files")));
     expect(invoke).toHaveBeenCalledWith("import_assets", { id: "talk", paths: ["/Users/me/Photo.PNG", "/Users/me/data.csv"] });
-    expect(screen.getByText("photo.png")).toBeTruthy();
+    // Images go in the fan; other files stay chips.
+    expect(screen.getByAltText("photo.png")).toBeTruthy();
     expect(screen.getByText("data.csv")).toBeTruthy();
     type("Use these");
     fireEvent.keyDown(textarea(), { key: "Enter" });
     expect(send).toHaveBeenCalledWith("Use these", { includeSlide: true, attachments: ["assets/photo.png", "assets/data.csv"] });
-    expect(screen.queryByText("photo.png")).toBeNull();
+    expect(screen.queryByAltText("photo.png")).toBeNull();
+    expect(screen.queryByText("data.csv")).toBeNull();
   });
 
   it("does nothing when the picker is cancelled", async () => {
@@ -390,9 +456,11 @@ describe("ChatPanel: attachments", () => {
     const attach = screen.getByTitle("Attach images or files");
     await act(async () => fireEvent.click(attach));
     await act(async () => fireEvent.click(attach));
-    expect(screen.getAllByText("a.png")).toHaveLength(1);
-    fireEvent.click(screen.getByText("a.png").querySelector("button")!);
-    expect(screen.queryByText("a.png")).toBeNull();
+    expect(screen.getAllByAltText("a.png")).toHaveLength(1);
+    fireEvent.click(screen.getByLabelText("Show 1 attached image"));
+    fireEvent.click(screen.getByLabelText("Remove a.png"));
+    expect(screen.queryByAltText("a.png")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("imports files dropped on the window", async () => {
@@ -408,7 +476,7 @@ describe("ChatPanel: attachments", () => {
     await act(async () => dragDrop!({ payload: { type: "drop", paths: ["/tmp/drop.png"] } }));
     expect(composer().className).not.toContain("border-primary");
     expect(invoke).toHaveBeenCalledWith("import_assets", { id: "talk", paths: ["/tmp/drop.png"] });
-    expect(screen.getByText("drop.png")).toBeTruthy();
+    expect(screen.getByAltText("drop.png")).toBeTruthy();
   });
 
   it("stops listening for drops when unmounted", async () => {
@@ -416,6 +484,125 @@ describe("ChatPanel: attachments", () => {
     await waitFor(() => expect(dragDrop).not.toBeNull());
     unmount();
     expect(unlistenDragDrop).toHaveBeenCalled();
+  });
+
+  const paste = (files: File[], text = "") =>
+    fireEvent.paste(textarea(), {
+      clipboardData: { files, getData: (type: string) => (type === "text/plain" ? text : "") },
+    });
+
+  it("saves pasted images as assets and attaches them", async () => {
+    invoke.mockImplementation(async (_cmd: string, args: { name: string }) => `assets/${args.name}`);
+    render(<ChatPanel />);
+    const shot = new File(["hi"], "image.png", { type: "image/png" });
+    const photo = new File(["jpg"], "Holiday.jpeg", { type: "image/jpeg" });
+    await act(async () => paste([shot, photo]));
+    await waitFor(() => expect(screen.getByAltText("Holiday.jpeg")).toBeTruthy());
+    expect(invoke).toHaveBeenCalledWith("save_asset", { id: "talk", name: "pasted-image.png", data: "aGk=" });
+    expect(invoke).toHaveBeenCalledWith("save_asset", { id: "talk", name: "Holiday.jpeg", data: "anBn" });
+    expect(screen.getByAltText("pasted-image.png").getAttribute("src")).toMatch(/\/talk\/assets\/pasted-image\.png$/);
+    type("Use these");
+    fireEvent.keyDown(textarea(), { key: "Enter" });
+    expect(send).toHaveBeenCalledWith("Use these", {
+      includeSlide: true,
+      attachments: ["assets/pasted-image.png", "assets/Holiday.jpeg"],
+    });
+  });
+
+  it("names a nameless pasted image after its type", async () => {
+    invoke.mockImplementation(async (_cmd: string, args: { name: string }) => `assets/${args.name}`);
+    render(<ChatPanel />);
+    await act(async () => paste([new File(["x"], "", { type: "image/jpeg" })]));
+    await waitFor(() => expect(screen.getByAltText("pasted-image.jpg")).toBeTruthy());
+  });
+
+  it("leaves text-only and non-image pastes alone", async () => {
+    render(<ChatPanel />);
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.assign(event, {
+      clipboardData: { files: [new File(["a,b"], "data.csv", { type: "text/csv" })], getData: () => "" },
+    });
+    await act(async () => textarea().dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("keeps text that came with a pasted image", async () => {
+    invoke.mockResolvedValue("assets/pasted-image.png");
+    render(<ChatPanel />);
+    const withText = new Event("paste", { bubbles: true, cancelable: true });
+    Object.assign(withText, {
+      clipboardData: { files: [new File(["hi"], "image.png", { type: "image/png" })], getData: () => "caption" },
+    });
+    await act(async () => textarea().dispatchEvent(withText));
+    expect(withText.defaultPrevented).toBe(false);
+    const imageOnly = new Event("paste", { bubbles: true, cancelable: true });
+    Object.assign(imageOnly, {
+      clipboardData: { files: [new File(["hi"], "image.png", { type: "image/png" })], getData: () => "" },
+    });
+    await act(async () => textarea().dispatchEvent(imageOnly));
+    expect(imageOnly.defaultPrevented).toBe(true);
+  });
+
+  it("reports a failed paste", async () => {
+    invoke.mockRejectedValue("disk full");
+    render(<ChatPanel />);
+    await act(async () => paste([new File(["hi"], "image.png", { type: "image/png" })]));
+    await waitFor(() => expect(useApp.getState().error).toBe("disk full"));
+  });
+
+  it("shows image previews in a fan that opens a grid to review and remove them", async () => {
+    const names = ["a.png", "b.jpg", "c.gif", "d.webp", "e.svg"];
+    openDialog.mockResolvedValue(names.map((n) => `/${n}`));
+    invoke.mockResolvedValue(names.map((n) => `assets/${n}`));
+    render(<ChatPanel />);
+    await act(async () => fireEvent.click(screen.getByTitle("Attach images or files")));
+
+    // The fan previews the latest four and counts the rest.
+    const fan = screen.getByLabelText("Show 5 attached images");
+    expect(Array.from(fan.querySelectorAll("img")).map((img) => img.alt)).toEqual(names.slice(1));
+    expect(fan.textContent).toBe("+1");
+
+    fireEvent.click(fan);
+    const grid = screen.getByRole("dialog", { name: "Attached images" });
+    expect(screen.queryByLabelText("Show 5 attached images")).toBeNull();
+    expect(Array.from(grid.querySelectorAll("img")).map((img) => img.alt)).toEqual(names);
+    expect(grid.textContent).toContain("5 images");
+
+    fireEvent.click(screen.getByLabelText("Remove c.gif"));
+    expect(screen.queryByAltText("c.gif")).toBeNull();
+    expect(screen.getByRole("dialog").textContent).toContain("4 images");
+
+    // Escape closes the grid back to the fan.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByLabelText("Show 4 attached images")).toBeTruthy();
+
+    // So do the close button and a click outside.
+    fireEvent.click(screen.getByLabelText("Show 4 attached images"));
+    fireEvent.click(screen.getByLabelText("Close"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Show 4 attached images"));
+    fireEvent.pointerDown(textarea());
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    type("Use these");
+    fireEvent.keyDown(textarea(), { key: "Enter" });
+    expect(send).toHaveBeenCalledWith("Use these", {
+      includeSlide: true,
+      attachments: ["assets/a.png", "assets/b.jpg", "assets/d.webp", "assets/e.svg"],
+    });
+    expect(screen.queryByLabelText(/attached image/)).toBeNull();
+  });
+
+  it("removes a non-image attachment chip", async () => {
+    openDialog.mockResolvedValue(["/notes.md"]);
+    invoke.mockResolvedValue(["assets/notes.md"]);
+    render(<ChatPanel />);
+    await act(async () => fireEvent.click(screen.getByTitle("Attach images or files")));
+    expect(screen.queryByLabelText(/attached image/)).toBeNull();
+    fireEvent.click(screen.getByLabelText("Remove notes.md"));
+    expect(screen.queryByText("notes.md")).toBeNull();
   });
 
   it("reports a failed import", async () => {
@@ -641,5 +828,54 @@ describe("composer fill", () => {
     type("something else");
     act(() => useApp.getState().fillComposer("Fix it"));
     expect(textarea().value).toBe("Fix it");
+  });
+
+  it("does not send a prepared message until the user does", async () => {
+    useApp.setState({ composerFill: null });
+    invoke.mockImplementation(async (cmd: string) => (cmd === "capture_sketch" ? ".slopslide/sketches/1-ab.png" : []));
+    document.body.setAttribute("data-sketch-target", "");
+    try {
+      render(<ChatPanel />);
+      await act(() => useApp.getState().tidyLayout());
+      expect(send).not.toHaveBeenCalled();
+      expect(textarea().value).toBe(TIDY_PROMPT);
+      expect(screen.getByRole("button", { name: "Show 1 attached image" })).toBeTruthy();
+    } finally {
+      document.body.removeAttribute("data-sketch-target");
+    }
+  });
+
+  it("shows a handed-over screenshot with the images and sends it with the message", () => {
+    useApp.setState({ composerFill: null });
+    render(<ChatPanel />);
+    act(() => useApp.getState().fillComposer("Tidy it", { screenshot: ".slopslide/sketches/1-ab.png" }));
+    const fan = screen.getByRole("button", { name: "Show 1 attached image" });
+    const img = fan.querySelector("img")!;
+    expect(img.getAttribute("src")).toContain("/.slopslide/sketches/1-ab.png");
+    expect(img.getAttribute("alt")).toBe("Slide screenshot");
+    fireEvent.keyDown(textarea(), { key: "Enter" });
+    expect(send).toHaveBeenCalledWith("Tidy it", {
+      includeSlide: true,
+      attachments: [],
+      screenshot: ".slopslide/sketches/1-ab.png",
+    });
+    expect(screen.queryByRole("button", { name: /attached image/ })).toBeNull();
+    type("Next");
+    fireEvent.keyDown(textarea(), { key: "Enter" });
+    expect(send).toHaveBeenLastCalledWith("Next", { includeSlide: true, attachments: [] });
+  });
+
+  it("lets the user remove the screenshot, and a plain fill clears it", () => {
+    useApp.setState({ composerFill: null });
+    render(<ChatPanel />);
+    act(() => useApp.getState().fillComposer("Tidy it", { screenshot: ".slopslide/sketches/1-ab.png" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 attached image" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Slide screenshot" }));
+    expect(screen.queryByRole("button", { name: /attached image/ })).toBeNull();
+    act(() => useApp.getState().fillComposer("Tidy it", { screenshot: ".slopslide/sketches/1-ab.png" }));
+    act(() => useApp.getState().fillComposer("Fix it"));
+    expect(screen.queryByRole("button", { name: /attached image/ })).toBeNull();
+    fireEvent.keyDown(textarea(), { key: "Enter" });
+    expect(send).toHaveBeenCalledWith("Fix it", { includeSlide: true, attachments: [] });
   });
 });

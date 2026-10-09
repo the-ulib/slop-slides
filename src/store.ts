@@ -10,9 +10,12 @@ import {
   type Deck,
   type DeckChanged,
   type LintIssue,
+  type Slide,
+  type TemplateSummary,
 } from "./lib/api";
 import { latestContext, mergeContext, type ContextUsage } from "./lib/context";
 import { inkBounds, SLIDE_SIZE, type Stroke } from "./lib/ink";
+import { layoutLabel } from "./lib/utils";
 import {
   defaultModel,
   pickContextWindow,
@@ -24,8 +27,11 @@ import {
 
 import { useNarration } from "./narrationStore";
 import { editedManifest, narrationDraftPrompt } from "./lib/narration";
+import { isPermissionMode, type Approval, type PermissionMode } from "./lib/permissions";
 
 export type ChatPart =
+  | { kind: "approval"; approval: Approval; status: "pending" | "resolved" | "expired" }
+  | { kind: "approvalReview"; id: string; status: string; detail: string | null }
   | { kind: "text"; text: string }
   | {
       kind: "tool";
@@ -88,6 +94,12 @@ export interface ModelSelection {
   effort: string;
   /** Claude only; `null` when the model has a single context window. */
   contextWindow: string | null;
+}
+
+const PERMISSION_KEY = "slopslide.codexPermissions";
+function loadPermissions(): PermissionMode {
+  const saved = localStorage.getItem(PERMISSION_KEY);
+  return isPermissionMode(saved) ? saved : "ask";
 }
 
 const SELECTION_KEY = "slopslide.selection";
@@ -178,6 +190,8 @@ interface AppState {
   messages: ChatMessage[];
   running: boolean;
   selection: ModelSelection;
+  permissionMode: PermissionMode;
+  setPermissionMode: (mode: PermissionMode) => void;
   /** `provider:model` keys starred in the model picker. */
   favoriteModels: string[];
   presenting: boolean;
@@ -186,8 +200,11 @@ interface AppState {
   error: string | null;
   /** Lint result for the saved deck.html; null until the first check finishes. */
   lint: LintIssue[] | null;
-  /** Text to put in the chat composer, with a counter so the same text can be sent twice. */
-  composerFill: { text: string; rev: number } | null;
+  /**
+   * Text to put in the chat composer, with a counter so the same text can be sent twice.
+   * `screenshot` is a slide screenshot shown with the text and sent along with the message.
+   */
+  composerFill: { text: string; rev: number; screenshot?: string } | null;
   /**
    * Ink drawn on slides in the editor, by slide id. Saved in deck.html as review marks, and
    * sent along with the next message about the slide while it has changed since last sent.
@@ -205,11 +222,13 @@ interface AppState {
   editReload: number;
   /** Slide edits that can be undone, newest last. */
   slideUndo: SlideUndo[];
+  /** Templates for layouts and styles; `undefined` until loaded. */
+  templates: TemplateSummary[] | undefined;
   /** Undone slide edits that can be redone, newest last. */
   slideRedo: SlideUndo[];
 
   openDeck: (id: string) => Promise<void>;
-  createDeck: (title: string) => Promise<void>;
+  createDeck: (title: string, template?: string | null) => Promise<void>;
   closeDeck: () => Promise<void>;
   setDeck: (deck: Deck) => void;
   select: (slide: string | null) => void;
@@ -225,7 +244,7 @@ interface AppState {
   setPresenting: (presenting: boolean) => void;
   setError: (error: string | null) => void;
   refreshLint: () => Promise<void>;
-  fillComposer: (text: string) => void;
+  fillComposer: (text: string, options?: { screenshot?: string | null }) => void;
   setSketches: (update: (all: Record<string, Stroke[]>) => Record<string, Stroke[]>) => void;
   clearSketch: (slide: string) => void;
   /** Keeps the slide's current marks out of the next message. */
@@ -241,12 +260,30 @@ interface AppState {
   redoSlideEdit: () => Promise<void>;
   /** Undoes every edit made since entering edit mode, then leaves it. */
   discardSlideEdits: () => Promise<void>;
-  /** Asks the agent to rebuild the current slide's layout around the user's hand edits. */
-  /** `overflow` lists elements the slide editor found running past the slide or cut off. */
+  refreshTemplates: () => Promise<void>;
+  /**
+   * Restyles the deck like the template: an empty deck takes its styles directly; otherwise
+   * the composer gets a prompt asking the agent to.
+   */
+  applyStyle: (template: string) => Promise<void>;
+  /**
+   * Adds a slide on the template's layout `slide` after the selected one: a copy of it when
+   * the deck uses that template, else a prompt in the composer for the agent.
+   */
+  addLayoutSlide: (template: string, slide: string) => Promise<void>;
+  /** Puts a prompt in the composer to rebuild the selected slide on the template's layout. */
+  changeLayout: (template: string, slide: string) => Promise<void>;
+  /** Saves the deck as a user template with placeholder content; null when it failed. */
+  saveAsTemplate: (name: string) => Promise<TemplateSummary | null>;
+  /**
+   * Screenshots the slide, leaves edit mode, and puts a prompt in the composer asking the agent
+   * to rebuild the slide's layout around the user's hand edits, with the screenshot attached.
+   * `overflow` lists elements the slide editor found running past the slide or cut off.
+   */
   tidyLayout: (overflow?: string[]) => Promise<void>;
   send: (
     text: string,
-    options: { includeSlide: boolean; attachments: string[]; screenshot?: boolean },
+    options: { includeSlide: boolean; attachments: string[]; screenshot?: string },
   ) => Promise<void>;
   /** Has the agent summarize the conversation so far, freeing up its context. */
   compact: () => Promise<void>;
@@ -270,6 +307,19 @@ export const TIDY_PROMPT =
 export const tidyPrompt = (overflow: string[] = []) =>
   overflow.length ? `${TIDY_PROMPT}\n\nThe editor found overflow:\n${overflow.map((o) => `- ${o}`).join("\n")}` : TIDY_PROMPT;
 
+/** How a prompt names a template's layout: its readable name, the slide and file to read. */
+const layoutRef = (template: TemplateSummary, slide: string, path: string) =>
+  `the "${layoutLabel(slide)}" layout of the "${template.title}" template (slide \`${slide}\` in \`${path}\`)`;
+
+export const stylePrompt = (template: TemplateSummary, path: string) =>
+  `Restyle the whole deck in the "${template.title}" style. The template is at \`${path}\`: take over its design system (fonts, colors, styles, decorative elements) and rebuild every slide on its closest layout. Keep all content, slide ids, and sections, and set <meta name="slopslide-template" content="${template.id}">.`;
+
+export const addLayoutPrompt = (template: TemplateSummary, slide: string, path: string, after: string | null) =>
+  `Add a new slide ${after ? "after this one" : "at the end of the deck"} based on ${layoutRef(template, slide, path)}. Recreate the layout with this deck's design system and fill it with content that fits the deck.`;
+
+export const changeLayoutPrompt = (template: TemplateSummary, slide: string, path: string, sameTemplate: boolean) =>
+  `Change the layout of this slide to ${layoutRef(template, slide, path)}. Keep this slide's id and its content${sameTemplate ? "." : ", and use this deck's design system."}`;
+
 const newId = () => crypto.randomUUID();
 let lintRun = 0;
 /** Slide edits are saved one after another, each based on the previous one's result. */
@@ -288,6 +338,12 @@ export const useApp = create<AppState>((set, get) => ({
   messages: [],
   running: false,
   selection: loadSelection(),
+  permissionMode: loadPermissions(),
+  setPermissionMode: (permissionMode) => {
+    if (get().running || !isPermissionMode(permissionMode)) return;
+    localStorage.setItem(PERMISSION_KEY, permissionMode);
+    set({ permissionMode });
+  },
   favoriteModels: loadFavorites(),
   presenting: false,
   providers: undefined,
@@ -302,6 +358,7 @@ export const useApp = create<AppState>((set, get) => ({
   editReload: 0,
   slideUndo: [],
   slideRedo: [],
+  templates: undefined,
 
   openDeck: async (id) => {
     try {
@@ -313,10 +370,10 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  createDeck: async (title) => {
+  createDeck: async (title, template = null) => {
     try {
       if (!(await useNarration.getState().save())) { get().setSidebarTab("narration"); return; }
-      const deck = await api.createDeck(title);
+      const deck = await api.createDeck(title, template);
       await loadDeckState(deck);
     } catch (error) {
       set({ error: errorMessage(error) });
@@ -327,6 +384,15 @@ export const useApp = create<AppState>((set, get) => ({
     if (get().codeDirty && !(await confirmDiscardEdits())) return;
     if (!(await useNarration.getState().save())) { get().setSidebarTab("narration"); return; }
     await flushReviewSave();
+    const { deck, running, messages } = get();
+    const reply = messages.findLast((m) => m.role === "assistant");
+    // Codex can pause for an approval. Stop before leaving so no invisible request is stranded.
+    if (deck && running && reply?.role === "assistant" && replyProvider(reply) === "codex") {
+      await api.interruptAgent(deck.id);
+      const chat = get().messages.map(settleInterrupted);
+      set({ messages: chat });
+      await api.saveChat(deck.id, chat);
+    }
     await api.closeDeck();
     await useNarration.getState().load(null);
     set({ codeDirty: false, deck: null, selected: null, messages: [], running: false, presenting: false, lint: null, composerFill: null, sketches: {}, sketchesSent: {}, imageExport: null, editing: false, slideUndo: [], slideRedo: [] });
@@ -434,7 +500,8 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  fillComposer: (text) => set((s) => ({ sidebarTab: "chat", chatOpen: true, composerFill: { text, rev: (s.composerFill?.rev ?? 0) + 1 } })),
+  fillComposer: (text, { screenshot } = {}) =>
+    set((s) => ({ sidebarTab: "chat", chatOpen: true, composerFill: { text, rev: (s.composerFill?.rev ?? 0) + 1, ...(screenshot && { screenshot }) } })),
 
   setSketches: (update) => {
     set((s) => ({ sketches: update(s.sketches) }));
@@ -465,6 +532,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   setEditing: (editing) => {
     if (editing === get().editing) return;
+    if (editing && selectedSlide()?.locked) return;
     // Each edit session starts with fresh history; leaving keeps the edits.
     set({ editing, slideUndo: [], slideRedo: [] });
   },
@@ -509,13 +577,86 @@ export const useApp = create<AppState>((set, get) => ({
     return editQueue;
   },
 
-  tidyLayout: async (overflow = []) => {
-    // Let any edit still being saved land first, so the agent sees the final version.
-    await editQueue;
-    await get().send(tidyPrompt(overflow), { includeSlide: true, attachments: [], screenshot: true });
+  refreshTemplates: async () => {
+    try {
+      const templates = await api.listTemplates();
+      set({ templates: Array.isArray(templates) ? templates : [] });
+    } catch (error) {
+      set({ templates: [], error: errorMessage(error) });
+    }
   },
 
-  send: async (text, { includeSlide, attachments, screenshot = false }) => {
+  applyStyle: async (id) => {
+    const { deck } = get();
+    const template = findTemplate(id);
+    if (!deck || !template) return;
+    try {
+      if (deck.slides.length === 0) {
+        get().setDeck(await api.applyTemplate(deck.id, id));
+        return;
+      }
+      const path = await api.stageTemplate(deck.id, id);
+      promptAgent(stylePrompt(template, path));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+
+  addLayoutSlide: async (id, slide) => {
+    const { deck, selected } = get();
+    const template = findTemplate(id);
+    if (!deck || !template) return;
+    try {
+      if (deck.template === id) {
+        const created = await api.addTemplateSlide(deck.id, id, slide, selected);
+        get().setDeck(created.deck);
+        get().select(created.slide);
+        return;
+      }
+      const path = await api.stageTemplate(deck.id, id);
+      promptAgent(addLayoutPrompt(template, slide, path, selected));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+
+  changeLayout: async (id, slide) => {
+    const { deck, selected } = get();
+    const template = findTemplate(id);
+    if (!deck || !template || !selected || selectedSlide()?.locked) return;
+    try {
+      const path = await api.stageTemplate(deck.id, id);
+      promptAgent(changeLayoutPrompt(template, slide, path, deck.template === id));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+
+  saveAsTemplate: async (name) => {
+    const { deck } = get();
+    if (!deck) return null;
+    try {
+      const created = await api.createTemplate(deck.id, name);
+      await get().refreshTemplates();
+      return created;
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      return null;
+    }
+  },
+
+  tidyLayout: async (overflow = []) => {
+    const { deck } = get();
+    if (!deck || selectedSlide()?.locked) return;
+    // Let any edit still being saved land first, so the screenshot shows the final version.
+    await editQueue;
+    const screenshot = await captureSlide(deck.id);
+    if (get().deck?.id !== deck.id) return;
+    get().setEditing(false);
+    promptAgent(tidyPrompt(overflow), { screenshot });
+  },
+
+  send: async (text, { includeSlide, attachments, screenshot }) => {
     const { deck, selected, running, selection } = get();
     if (!deck || running) return;
     // Typed as a message, the command still compacts rather than reaching the agent as text.
@@ -532,21 +673,20 @@ export const useApp = create<AppState>((set, get) => ({
       slide,
       attachments,
       sketch: bounds ? { image: null, bounds } : null,
+      ...(screenshot && { screenshot }),
       createdAt: Date.now(),
     };
     const assistant = newReply(selection.provider);
     set((s) => ({ messages: [...s.messages, user, assistant], running: true }));
-    if (slide && (user.sketch || screenshot)) {
+    // Let any edit still being saved land first, so the agent sees the final version.
+    await editQueue;
+    if (slide && user.sketch) {
       // Screenshot the slide with the ink on it.
       const image = await captureSlide(deck.id);
-      const captured: UserMessage = {
-        ...user,
-        ...(user.sketch && { sketch: { ...user.sketch, image } }),
-        ...(screenshot && { screenshot: image }),
-      };
+      const captured: UserMessage = { ...user, sketch: { ...user.sketch, image } };
       user = captured;
       set((s) => ({ messages: s.messages.map((m) => (m.id === captured.id ? captured : m)) }));
-      if (user.sketch) set((s) => ({ sketchesSent: { ...s.sketchesSent, [slide]: strokes } }));
+      set((s) => ({ sketchesSent: { ...s.sketchesSent, [slide]: strokes } }));
     }
     await startTurn(deck.id, assistant.id, buildPrompt(deck, user), false);
   },
@@ -570,7 +710,10 @@ export const useApp = create<AppState>((set, get) => ({
 
   interrupt: () => {
     const { deck } = get();
-    if (deck) void api.interruptAgent(deck.id);
+    if (deck) {
+      updateLastAssistant((m) => ({ ...m, parts: expireApprovals(m.parts) }));
+      void api.interruptAgent(deck.id);
+    }
   },
 
   resetChat: async () => {
@@ -600,7 +743,7 @@ function newReply(provider: Provider): AssistantMessage {
 
 /** Hands `prompt` to the selected agent; a failure to start lands on reply `replyId`. */
 async function startTurn(deckId: string, replyId: string, prompt: string, compact: boolean) {
-  const { selection, providers } = useApp.getState();
+  const { selection, providers, permissionMode } = useApp.getState();
   try {
     if (!(await useNarration.getState().save())) {
       useApp.getState().setSidebarTab("narration");
@@ -610,7 +753,7 @@ async function startTurn(deckId: string, replyId: string, prompt: string, compac
     const { provider, model, contextWindow } = selection;
     const info = providers?.find((p) => p.id === provider)?.models.find((m) => m.id === model);
     const effort = requestEffort(info, selection.effort);
-    await api.sendMessage(deckId, prompt, { provider, model, effort, contextWindow }, compact);
+    await api.sendMessage(deckId, prompt, { provider, model, effort, contextWindow, ...(provider === "codex" ? { permissionMode } : {}) }, compact);
   } catch (error) {
     updateAssistant(replyId, (m) => ({
       ...m,
@@ -658,6 +801,17 @@ async function confirmDiscardEdits(): Promise<boolean> {
   } catch {
     return window.confirm(message);
   }
+}
+
+function findTemplate(id: string): TemplateSummary | undefined {
+  return useApp.getState().templates?.find((t) => t.id === id);
+}
+
+/** Hands the composer a prepared message, showing the chat if it is hidden. */
+function promptAgent(text: string, options?: { screenshot?: string | null }) {
+  const { chatOpen, setChatOpen, fillComposer } = useApp.getState();
+  if (!chatOpen) setChatOpen(true);
+  fillComposer(text, options);
 }
 
 async function loadDeckState(deck: Deck) {
@@ -776,8 +930,14 @@ export function lintFixPrompt(issues: LintIssue[]): string {
 
 /** A transcript saved mid-turn (app quit) cannot resume streaming. */
 function settleInterrupted(message: ChatMessage): ChatMessage {
-  if (message.role !== "assistant" || message.status !== "streaming") return message;
-  return { ...message, status: "interrupted", thinking: false, compacting: false };
+  if (message.role !== "assistant") return message;
+  return { ...message, ...(message.status === "streaming" ? { status: "interrupted" as const, thinking: false, compacting: false } : {}), parts: expireApprovals(message.parts) };
+}
+
+/** The slide shown on the stage, if any. */
+function selectedSlide(): Slide | undefined {
+  const { deck, selected } = useApp.getState();
+  return deck?.slides.find((s) => s.id === selected);
 }
 
 function buildPrompt(deck: Deck, message: UserMessage): string {
@@ -787,6 +947,9 @@ function buildPrompt(deck: Deck, message: UserMessage): string {
     context.push(
       `Current slide: <section id="${message.slide}"> in deck.html (slide ${index + 1} of ${deck.slides.length})`,
     );
+    if (deck.slides[index]?.locked) {
+      context.push("The current slide is locked (data-locked): do not change it.");
+    }
   } else if (deck.slides.length === 0) {
     context.push("The deck has no slides yet.");
   }
@@ -803,7 +966,7 @@ function buildPrompt(deck: Deck, message: UserMessage): string {
     );
   }
   if (message.screenshot) {
-    context.push(`Screenshot: ${message.screenshot} (the current slide as it looks now, with the user's hand edits)`);
+    context.push(`Screenshot: ${message.screenshot} (screenshot of the slide with the user's hand edits)`);
   }
   if (context.length === 0) return message.text;
   return `[context]\n${context.join("\n")}\n[/context]\n\n${message.text}`;
@@ -829,8 +992,22 @@ function persistChat() {
   if (deck) void api.saveChat(deck.id, messages);
 }
 
+function expireApprovals(parts: ChatPart[]): ChatPart[] {
+  return parts.map((p) => p.kind === "approval" && p.status === "pending" ? { ...p, status: "expired" } : p);
+}
+
 function applyAgentEvent(event: AgentEvent) {
   switch (event.type) {
+    case "approvalRequested":
+      return updateLastAssistant((m) => ({ ...m, thinking: false, parts: [...m.parts, { kind: "approval", approval: event.approval, status: "pending" }] }));
+    case "approvalResolved":
+      return updateLastAssistant((m) => ({ ...m, parts: m.parts.map((p) => p.kind === "approval" && p.approval.id === event.id ? { ...p, status: "resolved" } : p) }));
+    case "approvalReview":
+      return updateLastAssistant((m) => {
+        const part: ChatPart = { kind: "approvalReview", id: event.id, status: event.status, detail: event.detail };
+        const existing = m.parts.some((p) => p.kind === "approvalReview" && p.id === event.id);
+        return { ...m, thinking: false, parts: existing ? m.parts.map((p) => p.kind === "approvalReview" && p.id === event.id ? part : p) : [...m.parts, part] };
+      });
     case "started":
       return;
     case "thinking":
@@ -904,7 +1081,7 @@ function applyAgentEvent(event: AgentEvent) {
         thinking: false,
         compacting: false,
         status: event.interrupted ? "interrupted" : m.error ? "error" : "done",
-        parts: m.parts.map((p) =>
+        parts: expireApprovals(m.parts).map((p) =>
           p.kind === "tool" && p.status === "running" ? { ...p, status: "done" } : p,
         ),
       }));

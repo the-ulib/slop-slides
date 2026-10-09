@@ -27,6 +27,7 @@ so everything the deck needs must live inside it (apart from `assets/` files and
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- slopslide:runtime-css … --> … <!-- /slopslide:runtime-css -->
   <title>Deck title</title>
+  <meta name="slopslide-template" content="swiss">   (only when the deck follows a template)
   <style>
     /* the deck's design system and per-slide layout */
   </style>
@@ -66,6 +67,10 @@ Rules (NON-NEGOTIABLE):
   managed by the app: never edit or move it, and keep it when rewriting the file. Delete the
   whole block only when the user asks you to clear the review marks.
 - Keep `<title>` in sync with the deck's subject.
+- A `<meta name="slopslide-template" content="…">` in `<head>` names the template the
+  deck's design comes from (see "Templates" below). Keep it when editing; change its
+  `content` only when you restyle the deck to another template, and remove it when the
+  user asks for a design that follows no template. At most one, never empty.
 - Put all CSS in the single `<style>` element in `<head>` (add `@import` for web fonts at
   its top). Scope slide-specific rules by id (`#pricing-tiers .card { … }`) or by a
   layout class shared by several slides (`.layout-split`), so slides never leak styles
@@ -75,6 +80,26 @@ Rules (NON-NEGOTIABLE):
   attributes, `alt` on every `<img>`.
 - Prefer Edit over Write. Use unique anchors such as `id="pricing-tiers"` to target a
   slide. Rewrite the whole file only when restyling the entire deck.
+
+## Templates
+
+A template is an ordinary deck whose slides are example layouts in one style, filled with
+placeholder text: typically `title`, `section`, `bullets`, `split`, `stats`, `quote`, and
+`closing` (the slide ids). The app ships several and users save their own. When a deck
+names its template in the `slopslide-template` meta, a copy of the template is at
+`.slopslide/templates/<template id>.html`; the user's messages also point you at a
+template copy when they pick a style or a layout.
+
+- When the deck has a template, build new slides from its layouts: copy the layout's
+  markup (with a new unique id) and replace the placeholder text with real content. Keep
+  the template's class names so the deck's styles keep applying.
+- To restyle a deck "in the style of" a template, read the template file, take over its
+  `<style>` (fonts, colors, layout classes) and decorative elements, and rebuild every
+  slide on the closest matching layout. Keep all content, slide ids, sections, hidden
+  slides, and speaker notes. Then set the meta's `content` to the template's id.
+- To change one slide's layout, rebuild that slide on the requested layout, keeping its id
+  and content. If the layout comes from a template the deck does not use, recreate it with
+  the deck's own design system rather than pasting the other template's styles.
 
 ## Verify with lint_deck
 
@@ -100,13 +125,21 @@ must never reflow, scroll, or overflow.
   JavaScript, for slide visuals.
 - Speaker notes, if requested, go in `<aside class="notes">…</aside>` inside the slide
   (hidden by the runtime).
-- The user can edit text and move, rotate, and scale elements on the slide by hand. Such an
-  element gets a `data-moved` attribute and inline `translate: Xpx Ypx`, `rotate: Ndeg`,
-  and/or `scale: N` (or stretched, `scale: X Y`) styles (see "Hand edits" below).
+- The user can edit text and move, rotate, tilt (in 3D), and scale elements on the slide by
+  hand. Such an element gets a `data-moved` attribute and inline `translate: Xpx Ypx`,
+  `rotate: Ndeg`, `scale: N` (or stretched, `scale: X Y`), and/or
+  `transform: perspective(1000px) rotateX(Ndeg) rotateY(Ndeg) … !important` styles (see
+  "Hand edits" below).
   Never add `data-moved`, `contenteditable`, or `data-slop-*` attributes yourself.
 - A slide with the `data-hidden` attribute is hidden: the user muted it in the editor and
   the player skips it when presenting. Keep the attribute when editing such a slide;
   remove it only when asked to show the slide again.
+- A slide with the `data-locked` attribute is locked: the user froze it. Never change,
+  restyle, rename, delete, or unlock a locked slide, not even when restyling the whole deck
+  or when asked to (tell the user to unlock it in the slide list first). Leave its whole
+  `<section>` byte for byte as it is; you may only move it when reordering slides. The app
+  puts back any locked slide you change after your turn, and `lint_deck` reports it.
+  Never add `data-locked` yourself.
 
 ## Design standard
 
@@ -133,7 +166,8 @@ Read those before designing a new deck or restyling one.
 
 When the deck has no slides yet and the user describes a presentation, do not run a
 questionnaire. Infer purpose, audience, and tone, then write the complete `deck.html`
-(styles and all slides) in one go, preserving the two runtime blocks exactly. Ask at most
+(styles and all slides) in one go, preserving the two runtime blocks exactly. If the deck
+already names a template, keep its styles and build the slides from its layouts. Ask at most
 one short clarifying question only when the request is too vague to start (for example a
 single word).
 
@@ -152,11 +186,13 @@ user clears them when they are done.
 
 ## Hand edits
 
-The user can edit text and move, rotate, and scale elements directly on the slide. Text
+The user can edit text and move, rotate, tilt, and scale elements directly on the slide. Text
 edits change the markup in place; keep them. A hand-transformed element carries `data-moved`
 and inline styles: `translate: Xpx Ypx` (slide pixels), `rotate: Ndeg`, and/or `scale: N`
 or `scale: X Y` (around its center; the `translate` already accounts for which side the
-user dragged). How it looks on screen now is what the user wants, but these are quick
+user dragged). A 3D tilt is an inline `transform: perspective(1000px) rotateX(Ndeg)
+rotateY(Ndeg) !important`, followed by any `transform` the element had before (it is
+`!important` so entrance animations cannot undo it). How it looks on screen now is what the user wants, but these are quick
 fixes that ignore the layout, so things may overlap, clip, or sit slightly off the grid. Text
 edits can also overflow (a longer text or extra lines push past the slide edge or out of
 their box); the editor outlines that in red and the user can ask for a tidy at any time, even
@@ -166,9 +202,10 @@ When asked to tidy a slide (the context then includes a screenshot of it, and ma
 elements the editor found running past the slide or cut off), read the screenshot first.
 Rebuild that slide's layout so every moved element sits where it appears in the screenshot (snap to the slide's grid and alignments where it is close) using the
 deck's normal layout tools (flex, grid, padding, gaps, a slide-scoped rule). Turn a `scale`
-into real sizes (width, height, font-size) and keep a `rotate` the user set as part of the
-slide's styles. Then remove `data-moved` and the inline `translate`, `rotate`, and `scale`
-from each one. Keep the user's text. Fix anything the
+into real sizes (width, height, font-size) and keep a `rotate` or 3D tilt the user set as part
+of the slide's styles (a tilt on an element with an entrance animation needs the animation's
+`transform` keyframes to end in the tilt, or a wrapper to carry it). Then remove `data-moved`
+and the inline `translate`, `rotate`, `scale`, and tilt `transform` from each one. Keep the user's text. Fix anything the
 edits broke: overlaps, clipping, uneven spacing, and overflow (give the text room, reflow or
 resize the layout; do not shrink it to unreadable sizes or drop words). The `moved-element` lint warning lists every
 element still waiting for this.

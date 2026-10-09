@@ -7,6 +7,7 @@ import { JSDOM, type DOMWindow } from "jsdom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import RUNTIME from "../../src-tauri/assets/runtime.js?raw";
+import { strokePath, toPixels } from "../lib/ink";
 
 const DECK = `<!DOCTYPE html><html><body>
 <main class="deck">
@@ -428,6 +429,18 @@ describe("player: review marks", () => {
     expect(dot!.getAttribute("stroke-opacity")).toBe("0.4");
   });
 
+  it("draws longer strokes as the same smooth curve the app draws", () => {
+    const points: [number, number][] = [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]];
+    const html = DECK.replace(
+      "</body>",
+      `<script type="application/json" id="slopslide-review">${JSON.stringify({ intro: [{ tool: "pen", color: "#000", points }] })}</script></body>`,
+    );
+    const p = player({ html, at: "?review" });
+    const path = p.doc.querySelector("#intro > svg.slop-review path")!;
+    expect(path.getAttribute("d")).toBe("M0 0L480 0Q960 0 960 270Q960 540 0 540");
+    expect(path.getAttribute("d")).toBe(strokePath(toPixels(points, 1920, 1080)));
+  });
+
   it("leaves Cmd+R to the browser and decks without marks alone", () => {
     const p = player({ html: REVIEWED });
     const event = new p.window.KeyboardEvent("keydown", { key: "r", metaKey: true, cancelable: true });
@@ -454,5 +467,78 @@ describe("player: review marks", () => {
     const css = readFileSync("src-tauri/assets/runtime.css", "utf8");
     expect(css).toMatch(/\.slide > \.slop-review\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/html\[data-slop-review\] \.slide > \.slop-review\s*\{[^}]*display:\s*block/);
+  });
+});
+
+describe("player: without JavaScript", () => {
+  const CSS = readFileSync("src-tauri/assets/runtime.css", "utf8");
+  // Chat apps on iOS open decks in Quick Look, which renders HTML but runs no scripts.
+  function styled(flagged: boolean) {
+    const html = DECK.replace("<html>", `<html${flagged ? " data-slop-player" : ""}><head><style>${CSS}</style></head>`)
+      .replace('<section class="slide"><p>No id</p>', '<section class="slide" data-hidden><p class="reveal">No id</p>');
+    const dom = new JSDOM(html, { pretendToBeVisual: true });
+    doms.push(dom);
+    const doc = dom.window.document;
+    const style = (selector: string) => dom.window.getComputedStyle(doc.querySelector(selector)!);
+    return { doc, style };
+  }
+
+  it("is switched on by the player", () => {
+    expect(player().doc.documentElement.hasAttribute("data-slop-player")).toBe(true);
+  });
+
+  it("lists every shown slide, in the flow, when no script flags the player", () => {
+    const { style } = styled(false);
+    expect(style("#intro").visibility).toBe("visible");
+    expect(style("#intro").opacity).toBe("1");
+    expect(style("#intro").position).toBe("relative");
+    expect(style("#end").visibility).toBe("visible");
+    expect(style("[data-hidden]").display).toBe("none");
+    expect(style("body").overflow).not.toBe("hidden");
+  });
+
+  it("keeps slides visible and the page scrolling despite the deck's own styles", () => {
+    const deckStyles =
+      "<style>html, body { height: 100%; overflow: hidden } .slide { opacity: 0; visibility: hidden } .reveal { opacity: 0 }</style>";
+    const html = DECK.replace("<html>", `<html><head><style>${CSS}</style>${deckStyles}</head>`).replace(
+      "<p>No id</p>",
+      '<p class="reveal">No id</p>',
+    );
+    const dom = new JSDOM(html, { pretendToBeVisual: true });
+    doms.push(dom);
+    const style = (selector: string) => dom.window.getComputedStyle(dom.window.document.querySelector(selector)!);
+    expect(style("#intro").visibility).toBe("visible");
+    expect(style("#intro").opacity).toBe("1");
+    expect(style(".reveal").opacity).toBe("1");
+    expect(style("body").overflow).toBe("visible");
+    expect(style("html").overflow).toBe("visible");
+  });
+
+  it("hides all but the active slide once the player is flagged", () => {
+    const { doc, style } = styled(true);
+    expect(style("#intro").visibility).toBe("hidden");
+    expect(style("#intro").position).toBe("absolute");
+    doc.getElementById("intro")!.classList.add("active");
+    expect(style("#intro").visibility).toBe("visible");
+    expect(style("[data-hidden] .reveal").opacity).toBe("0");
+  });
+
+  it("stops mobile browsers from enlarging slide text", () => {
+    // iOS inflates small text on narrow screens, which overflows the zoomed slides.
+    expect(CSS).toMatch(/html\s*\{[^}]*-webkit-text-size-adjust:\s*100%/);
+    expect(CSS).toMatch(/html\s*\{[^}]*[^-]text-size-adjust:\s*100%/);
+  });
+
+  it("zooms the stage down to narrow windows", () => {
+    const zooms = [...CSS.matchAll(/@media screen and \(max-width: ([\d.]+)px\) \{[^{]*\{ zoom: ([\d.]+); \} \}/g)];
+    expect(zooms.length).toBeGreaterThan(10);
+    for (const [, width, zoom] of zooms) {
+      // The step applies to windows narrower than `width`; the zoomed stage still fits the
+      // narrowest of them.
+      const narrowest = Number(width) + 0.02 - 96;
+      expect(1920 * Number(zoom)).toBeLessThanOrEqual(narrowest);
+    }
+    // Phones (≈375–430 CSS px wide) get a step.
+    expect(zooms.some(([, width]) => Number(width) < 430)).toBe(true);
   });
 });

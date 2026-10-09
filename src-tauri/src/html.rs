@@ -19,6 +19,10 @@ const CSS_END: &str = "<!-- /slopslide:runtime-css -->";
 pub(crate) const JS_START: &str =
     "<!-- slopslide:runtime-js (managed by SlopSlide, do not edit) -->";
 const JS_END: &str = "<!-- /slopslide:runtime-js -->";
+/// Runs in `<head>` so the player's stylesheet applies before the first paint. Viewers without
+/// JavaScript skip it and get the stylesheet's fallback: every slide, top to bottom.
+pub(crate) const PLAYER_FLAG: &str =
+    "<script>document.documentElement.setAttribute(\"data-slop-player\", \"\");</script>";
 
 #[derive(Debug, Clone)]
 pub struct SlideSpan {
@@ -31,10 +35,16 @@ pub struct SlideSpan {
     pub tag_name_end: usize,
     /// Byte range of the whole `data-hidden` attribute, when the slide is hidden.
     pub hidden: Option<Range<usize>>,
+    /// Byte range of the whole `data-locked` attribute, when the slide is locked.
+    pub locked: Option<Range<usize>>,
 }
 
 /// Marks a slide the player skips. The editor still shows it, muted.
 pub const HIDDEN_ATTR: &str = "data-hidden";
+
+/// Marks a slide neither the user nor the agent may change. The editor refuses edits to it,
+/// and the app puts it back as it was if the agent changes or removes it in a turn.
+pub const LOCKED_ATTR: &str = "data-locked";
 
 /// Marks an element the user moved, rotated or scaled by hand in the editor; it carries inline
 /// `translate` / `rotate` / `scale` styles until the agent tidies the slide's layout.
@@ -131,14 +141,20 @@ pub fn find_slides(html: &str) -> Vec<SlideSpan> {
             }
             (None, false) if has_class(&tag, "slide") => {
                 let id = tag.attrs.iter().find(|(n, _, _, _)| n == "id");
-                let hidden = tag.attrs.iter().find(|(n, _, _, _)| n == HIDDEN_ATTR);
+                let flag = |attr: &str| {
+                    tag.attrs
+                        .iter()
+                        .find(|(n, _, _, _)| n == attr)
+                        .map(|(_, _, _, r)| r.clone())
+                };
                 open = Some((
                     SlideSpan {
                         range: i..i,
                         id: id.map(|(_, v, _, _)| v.clone()).filter(|v| !v.is_empty()),
                         id_value: id.map(|(_, _, r, _)| r.clone()),
                         tag_name_end: tag.name_end,
-                        hidden: hidden.map(|(_, _, _, r)| r.clone()),
+                        hidden: flag(HIDDEN_ATTR),
+                        locked: flag(LOCKED_ATTR),
                     },
                     0,
                 ));
@@ -348,7 +364,8 @@ fn insert_after_head(html: &str, snippet: &str) -> String {
 /// Installs (or refreshes) the player runtime: base CSS first in `<head>` so deck styles
 /// override it, and the script at the end of `<body>`.
 pub fn ensure_runtime(html: &str) -> String {
-    let css = format!("{CSS_START}\n  <style>\n{RUNTIME_CSS}  </style>\n  {CSS_END}");
+    let css =
+        format!("{CSS_START}\n  <style>\n{RUNTIME_CSS}  </style>\n  {PLAYER_FLAG}\n  {CSS_END}");
     let js = format!("{JS_START}\n  <script>\n{RUNTIME_JS}  </script>\n  {JS_END}");
     let html = match replace_block(html, CSS_START, CSS_END, &css) {
         Some(updated) => updated,
@@ -538,20 +555,115 @@ pub fn insert(
 /// Adds or removes the slide's `data-hidden` attribute. Leaves the markup untouched when
 /// the slide is already in the requested state.
 pub fn set_hidden(html: &str, id: &str, hidden: bool) -> Result<String, String> {
+    set_flag(html, id, HIDDEN_ATTR, hidden, |s| s.hidden.clone())
+}
+
+/// Adds or removes the slide's `data-locked` attribute, like [`set_hidden`].
+pub fn set_locked(html: &str, id: &str, locked: bool) -> Result<String, String> {
+    set_flag(html, id, LOCKED_ATTR, locked, |s| s.locked.clone())
+}
+
+fn set_flag(
+    html: &str,
+    id: &str,
+    attr: &str,
+    on: bool,
+    current: impl Fn(&SlideSpan) -> Option<Range<usize>>,
+) -> Result<String, String> {
     let slides = find_slides(html);
     let span = span_of(&slides, id).ok_or_else(|| format!("Slide not found: {id}"))?;
-    Ok(match (&span.hidden, hidden) {
+    Ok(match (current(span), on) {
         (None, true) => format!(
-            "{} {HIDDEN_ATTR}{}",
+            "{} {attr}{}",
             &html[..span.tag_name_end],
             &html[span.tag_name_end..]
         ),
-        (Some(attr), false) => {
-            let start = html[..attr.start].trim_end().len();
-            format!("{}{}", &html[..start], &html[attr.end..])
+        (Some(range), false) => {
+            let start = html[..range.start].trim_end().len();
+            format!("{}{}", &html[..start], &html[range.end..])
         }
         _ => html.to_string(),
     })
+}
+
+/// Whether slide `id` exists and is locked.
+pub fn is_locked(html: &str, id: &str) -> bool {
+    span_of(&find_slides(html), id).is_some_and(|s| s.locked.is_some())
+}
+
+/// A locked slide as it was when a guard was set up: what it must stay like.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LockedSlide {
+    pub id: String,
+    pub markup: String,
+    /// Id of the slide before it, where it goes back if it is removed; None when it was first.
+    pub after: Option<String>,
+}
+
+/// Every locked slide of `html`, in order.
+pub fn locked_slides(html: &str) -> Vec<LockedSlide> {
+    let slides = find_slides(html);
+    slides
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.locked.is_some())
+        .filter_map(|(i, s)| {
+            Some(LockedSlide {
+                id: s.id.clone()?,
+                markup: html[s.range.clone()].to_string(),
+                after: i.checked_sub(1).and_then(|p| slides[p].id.clone()),
+            })
+        })
+        .collect()
+}
+
+/// Ids of the `locked` slides that `html` changed or removed. Moving one is not a change.
+pub fn changed_locked(html: &str, locked: &[LockedSlide]) -> Vec<String> {
+    let slides = find_slides(html);
+    locked
+        .iter()
+        .filter(|l| {
+            span_of(&slides, &l.id).map(|s| &html[s.range.clone()]) != Some(l.markup.as_str())
+        })
+        .map(|l| l.id.clone())
+        .collect()
+}
+
+/// `html` with every `locked` slide as it was: changed ones get their markup back, removed
+/// ones go back after the slide they followed (or first). Returns the ids it put back.
+pub fn restore_locked(html: &str, locked: &[LockedSlide]) -> (String, Vec<String>) {
+    let mut out = html.to_string();
+    let mut restored = Vec::new();
+    for slide in locked {
+        let slides = find_slides(&out);
+        match span_of(&slides, &slide.id) {
+            Some(span) if out[span.range.clone()] == slide.markup => continue,
+            Some(span) => out.replace_range(span.range.clone(), &slide.markup),
+            None => {
+                let anchor = match &slide.after {
+                    Some(after) => span_of(&slides, after).or(slides.last()),
+                    None => None,
+                };
+                let first = slides.first().filter(|_| anchor.is_none());
+                let (at, indent, before) = match (anchor, first) {
+                    (Some(a), _) => (a.range.end, indent_before(&out, a.range.start), false),
+                    (None, Some(f)) => (f.range.start, indent_before(&out, f.range.start), true),
+                    (None, None) => match end_of_deck(&out) {
+                        Ok(at) => (at, "    ", false),
+                        Err(_) => continue,
+                    },
+                };
+                let insert = if before {
+                    format!("{}\n{indent}", slide.markup)
+                } else {
+                    format!("\n{indent}{}", slide.markup)
+                };
+                out.insert_str(at, &insert);
+            }
+        }
+        restored.push(slide.id.clone());
+    }
+    (out, restored)
 }
 
 fn section_span(sections: &[SectionSpan], index: usize) -> Result<&SectionSpan, String> {
@@ -636,19 +748,274 @@ pub fn replace_slide(html: &str, id: &str, markup: &str) -> Result<(String, Stri
     Ok((out, previous))
 }
 
-pub fn duplicate(html: &str, id: &str) -> Result<(String, String), String> {
+/// Slide `id` of `html` with its id replaced by the `{{ID}}` placeholder [`insert`] fills in.
+fn slide_with_id_placeholder(html: &str, id: &str) -> Result<String, String> {
     let slides = find_slides(html);
     let span = span_of(&slides, id).ok_or_else(|| format!("Slide not found: {id}"))?;
     let range = span
         .id_value
         .clone()
         .expect("slides with ids have id ranges");
-    let copy = format!(
+    Ok(format!(
         "{}{{{{ID}}}}{}",
         &html[span.range.start..range.start],
         &html[range.end..span.range.end]
-    );
-    insert(html, Some(id), &copy, &format!("{id}-copy"))
+    ))
+}
+
+/// Inserts a copy of slide `id` right after it. The copy is not locked, so it can be changed.
+pub fn duplicate(html: &str, id: &str) -> Result<(String, String), String> {
+    let copy = slide_with_id_placeholder(html, id)?;
+    let (out, new_id) = insert(html, Some(id), &copy, &format!("{id}-copy"))?;
+    Ok((set_locked(&out, &new_id, false)?, new_id))
+}
+
+/// Inserts a copy of slide `slide` of the document `source` (a template) after `after`,
+/// keeping its id when the deck does not use it yet. Returns the document and the new id.
+pub fn copy_slide(
+    html: &str,
+    after: Option<&str>,
+    source: &str,
+    slide: &str,
+) -> Result<(String, String), String> {
+    let copy = slide_with_id_placeholder(source, slide)?;
+    let (out, id) = insert(html, after, &copy, slide)?;
+    Ok((set_locked(&out, &id, false)?, id))
+}
+
+/// Name of the `<meta>` naming the template a deck's design comes from:
+/// `<meta name="slopslide-template" content="<template id>">`.
+pub const TEMPLATE_META: &str = "slopslide-template";
+
+/// The template `<meta>` tag: where it starts and its parsed tag.
+fn template_meta(html: &str) -> Option<(usize, Tag)> {
+    tags(html).find(|(_, tag)| {
+        !tag.closing
+            && tag.name == "meta"
+            && tag
+                .attrs
+                .iter()
+                .any(|(n, v, _, _)| n == "name" && v.trim().eq_ignore_ascii_case(TEMPLATE_META))
+    })
+}
+
+/// Id of the template the deck's design comes from (see [`TEMPLATE_META`]).
+pub fn template(html: &str) -> Option<String> {
+    let (_, tag) = template_meta(html)?;
+    let content = tag.attrs.iter().find(|(n, _, _, _)| n == "content")?;
+    let id = decode_entities(content.1.trim());
+    (!id.is_empty()).then_some(id)
+}
+
+/// Names the deck's template in its `<meta>` (right after `<title>`), or removes it for None.
+pub fn set_template(html: &str, template: Option<&str>) -> String {
+    let tag = template.map(|id| {
+        format!(
+            "<meta name=\"{TEMPLATE_META}\" content=\"{}\">",
+            escape_attr(id)
+        )
+    });
+    match (template_meta(html), tag) {
+        (Some((at, old)), Some(tag)) => format!("{}{tag}{}", &html[..at], &html[old.end..]),
+        (Some((at, old)), None) => {
+            let start = html[..at].trim_end().len();
+            format!("{}{}", &html[..start], &html[old.end..])
+        }
+        (None, Some(tag)) => match find_ci(html, 0, "</title") {
+            Some(end) => {
+                let at = html[end..].find('>').map_or(html.len(), |e| end + e + 1);
+                format!("{}\n  {tag}{}", &html[..at], &html[at..])
+            }
+            None => insert_after_head(html, &format!("\n  {tag}")),
+        },
+        (None, None) => html.to_string(),
+    }
+}
+
+/// `html` without its slides and section markers: the deck's shell (styles, runtime).
+pub fn strip_slides(html: &str) -> String {
+    let mut ranges: Vec<Range<usize>> = find_slides(html)
+        .into_iter()
+        .map(|s| s.range)
+        .chain(find_sections(html).into_iter().map(|s| s.range))
+        .collect();
+    ranges.sort_by_key(|r| r.start);
+    let mut out = String::with_capacity(html.len());
+    let mut at = 0;
+    for range in ranges {
+        let start = html[at..range.start].trim_end().len() + at;
+        out.push_str(&html[at..start]);
+        at = range.end;
+    }
+    out.push_str(&html[at..]);
+    out
+}
+
+/// `html` without the player runtime blocks, e.g. for the agent to read a template.
+pub fn without_runtime(html: &str) -> String {
+    let mut out = html.to_string();
+    for (start, end) in [(CSS_START, CSS_END), (JS_START, JS_END)] {
+        if let Some(s) = out.find(start) {
+            if let Some(e) = out[s..].find(end) {
+                let from = out[..s].trim_end().len();
+                out = format!("{}{}", &out[..from], &out[s + e + end.len()..]);
+            }
+        }
+    }
+    out
+}
+
+/// Replaces every word of the slides' text with placeholder (lorem ipsum) words of about
+/// the same length and case, and every digit with another digit, keeping all markup,
+/// styles, and entities. Turns a deck into a template without its content.
+pub fn with_placeholder_text(html: &str) -> String {
+    let mut words = PlaceholderWords::default();
+    let mut out = String::with_capacity(html.len());
+    let mut at = 0;
+    for slide in find_slides(html) {
+        out.push_str(&html[at..slide.range.start]);
+        let s = &html[slide.range.clone()];
+        let mut i = 0;
+        while i < s.len() {
+            let next = s[i..].find('<').map_or(s.len(), |e| i + e);
+            out.push_str(&words.replace(&s[i..next]));
+            if next == s.len() {
+                break;
+            }
+            let end = if s[next..].starts_with("<!--") {
+                s[next..].find("-->").map_or(s.len(), |e| next + e + 3)
+            } else {
+                match parse_tag(s, next) {
+                    Some(tag)
+                        if !tag.closing
+                            && matches!(tag.name.as_str(), "script" | "style" | "textarea") =>
+                    {
+                        find_ci(s, tag.end, &format!("</{}", tag.name)).unwrap_or(s.len())
+                    }
+                    Some(tag) => tag.end,
+                    None => next + 1,
+                }
+            };
+            out.push_str(&s[next..end]);
+            i = end;
+        }
+        at = slide.range.end;
+    }
+    out.push_str(&html[at..]);
+    out
+}
+
+const LOREM: &[&str] = &[
+    "a",
+    "ad",
+    "et",
+    "in",
+    "ut",
+    "id",
+    "non",
+    "sed",
+    "est",
+    "sit",
+    "amet",
+    "elit",
+    "enim",
+    "quis",
+    "nisi",
+    "lorem",
+    "ipsum",
+    "dolor",
+    "magna",
+    "minim",
+    "culpa",
+    "labore",
+    "dolore",
+    "veniam",
+    "fugiat",
+    "tempor",
+    "aliqua",
+    "nostrud",
+    "officia",
+    "laboris",
+    "commodo",
+    "pariatur",
+    "voluptate",
+    "adipiscing",
+    "incididunt",
+    "consectetur",
+    "exercitation",
+    "reprehenderit",
+];
+const DIGITS: &[u8] = b"4827365190";
+
+#[derive(Default)]
+struct PlaceholderWords {
+    next: usize,
+}
+
+impl PlaceholderWords {
+    fn replace(&mut self, text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut chars = text.char_indices().peekable();
+        while let Some((i, c)) = chars.next() {
+            if c == '&' {
+                // Keep entities such as `&amp;` or `&#8212;` as they are.
+                let entity = text[i..].find(';').filter(|&e| {
+                    e > 1
+                        && e <= 10
+                        && text[i + 1..i + e]
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '#')
+                });
+                if let Some(e) = entity {
+                    out.push_str(&text[i..=i + e]);
+                    while chars.peek().is_some_and(|&(j, _)| j <= i + e) {
+                        chars.next();
+                    }
+                    continue;
+                }
+            }
+            if c.is_alphabetic() {
+                let mut word = String::from(c);
+                while let Some(&(_, next)) = chars.peek().filter(|(_, n)| n.is_alphabetic()) {
+                    word.push(next);
+                    chars.next();
+                }
+                out.push_str(&self.word(&word));
+            } else if c.is_ascii_digit() {
+                out.push(DIGITS[self.next % DIGITS.len()] as char);
+                self.next += 1;
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// A placeholder word as long as `original` as the list allows, in the same case.
+    fn word(&mut self, original: &str) -> String {
+        let len = original.chars().count();
+        let distance = |w: &&str| w.len().abs_diff(len);
+        let best = LOREM.iter().map(distance).min().unwrap_or(0);
+        let fits: Vec<&str> = LOREM
+            .iter()
+            .filter(|w| distance(w) == best)
+            .copied()
+            .collect();
+        let word = fits[self.next % fits.len()];
+        self.next += 1;
+        let mut letters = original.chars();
+        let first_upper = letters.next().is_some_and(char::is_uppercase);
+        if first_upper && len > 1 && original.chars().all(char::is_uppercase) {
+            word.to_uppercase()
+        } else if first_upper {
+            let mut w = word.chars();
+            w.next()
+                .map(|f| f.to_uppercase().chain(w).collect())
+                .unwrap_or_default()
+        } else {
+            word.to_string()
+        }
+    }
 }
 
 /// Quoted deck-relative `assets/…` references in document order: the byte range of each
@@ -842,6 +1209,146 @@ mod tests {
         .unwrap();
         assert_eq!(id, "slide");
         assert_eq!(ids(&added), ["intro", "slide", "plan", "slide-3"]);
+    }
+
+    fn locked(html: &str) -> Vec<bool> {
+        find_slides(html)
+            .into_iter()
+            .map(|s| s.locked.is_some())
+            .collect()
+    }
+
+    const LOCKED_DECK: &str = "<main class=\"deck\">\n    <section class=\"slide\" id=\"a\">A</section>\n    <section class=\"slide\" id=\"b\" data-locked>B</section>\n    <section class=\"slide\" id=\"c\">C</section>\n    <section class=\"slide\" id=\"d\" data-locked>D</section>\n  </main>";
+
+    #[test]
+    fn locks_and_unlocks_slides() {
+        let deck = normalize_ids(DECK).unwrap();
+        let locked_deck = set_locked(&deck, "plan", true).unwrap();
+        assert_eq!(locked(&locked_deck), [false, true, false]);
+        assert!(locked_deck.contains("<section data-locked class='slide' id=plan>"));
+        assert!(is_locked(&locked_deck, "plan") && !is_locked(&locked_deck, "intro"));
+        assert!(!is_locked(&locked_deck, "missing"));
+        assert_eq!(set_locked(&locked_deck, "plan", true).unwrap(), locked_deck);
+        assert_eq!(set_locked(&locked_deck, "plan", false).unwrap(), deck);
+        assert!(set_locked(&deck, "missing", true).is_err());
+
+        let both = set_hidden(&locked_deck, "plan", true).unwrap();
+        assert_eq!(
+            (hidden(&both), locked(&both)),
+            (vec![false, true, false], vec![false, true, false])
+        );
+        let unlocked = set_locked(&both, "plan", false).unwrap();
+        assert_eq!(locked(&unlocked), [false, false, false]);
+        assert_eq!(
+            hidden(&unlocked),
+            [false, true, false],
+            "unlocking keeps it hidden"
+        );
+    }
+
+    #[test]
+    fn copies_of_locked_slides_are_unlocked() {
+        let deck = set_locked(&normalize_ids(DECK).unwrap(), "intro", true).unwrap();
+        let (copied, id) = duplicate(&deck, "intro").unwrap();
+        assert_eq!(id, "intro-copy");
+        assert_eq!(locked(&copied), [true, false, false, false]);
+
+        let (copied, id) = copy_slide(&normalize_ids(DECK).unwrap(), None, &deck, "intro").unwrap();
+        assert_eq!(id, "intro-2");
+        assert_eq!(locked(&copied), [false, false, false, false]);
+    }
+
+    #[test]
+    fn lists_locked_slides_with_their_predecessor() {
+        let locked = locked_slides(LOCKED_DECK);
+        assert_eq!(
+            locked,
+            [
+                LockedSlide {
+                    id: "b".into(),
+                    markup: "<section class=\"slide\" id=\"b\" data-locked>B</section>".into(),
+                    after: Some("a".into()),
+                },
+                LockedSlide {
+                    id: "d".into(),
+                    markup: "<section class=\"slide\" id=\"d\" data-locked>D</section>".into(),
+                    after: Some("c".into()),
+                },
+            ]
+        );
+        let first = LOCKED_DECK.replace("id=\"a\">", "id=\"a\" data-locked>");
+        assert_eq!(locked_slides(&first)[0].after, None);
+        assert!(locked_slides(DECK).is_empty());
+    }
+
+    #[test]
+    fn detects_changed_locked_slides() {
+        let locked = locked_slides(LOCKED_DECK);
+        assert!(changed_locked(LOCKED_DECK, &locked).is_empty());
+        let edited_others = LOCKED_DECK.replace(">A<", ">A!<").replace(">C<", ">C!<");
+        assert!(changed_locked(&edited_others, &locked).is_empty());
+        let moved = reorder(LOCKED_DECK, &["d", "c", "b", "a"].map(String::from)).unwrap();
+        assert!(
+            changed_locked(&moved, &locked).is_empty(),
+            "moving is no change"
+        );
+
+        assert_eq!(
+            changed_locked(&LOCKED_DECK.replace(">B<", ">B!<"), &locked),
+            ["b"]
+        );
+        assert_eq!(
+            changed_locked(
+                &LOCKED_DECK.replace(" id=\"d\" data-locked", " id=\"d\""),
+                &locked
+            ),
+            ["d"],
+            "unlocking is a change"
+        );
+        assert_eq!(
+            changed_locked(&delete(LOCKED_DECK, "b").unwrap(), &locked),
+            ["b"]
+        );
+    }
+
+    #[test]
+    fn restores_changed_and_removed_locked_slides() {
+        let locked = locked_slides(LOCKED_DECK);
+        let (same, restored) = restore_locked(LOCKED_DECK, &locked);
+        assert_eq!((same.as_str(), restored.len()), (LOCKED_DECK, 0));
+
+        let edited = LOCKED_DECK
+            .replace(">A<", ">A!<")
+            .replace(">B<", ">B!<")
+            .replace(" id=\"d\" data-locked", " id=\"d\"");
+        let (out, restored) = restore_locked(&edited, &locked);
+        assert_eq!(restored, ["b", "d"]);
+        assert_eq!(out, LOCKED_DECK.replace(">A<", ">A!<"), "other edits stay");
+
+        let removed = delete(&delete(LOCKED_DECK, "b").unwrap(), "d").unwrap();
+        let (out, restored) = restore_locked(&removed, &locked);
+        assert_eq!(restored, ["b", "d"]);
+        assert_eq!(
+            out, LOCKED_DECK,
+            "back in place, indented like its neighbors"
+        );
+
+        // Its predecessor is gone too: it goes to the end.
+        let gone = delete(&delete(LOCKED_DECK, "a").unwrap(), "b").unwrap();
+        let (out, _) = restore_locked(&gone, &locked);
+        assert_eq!(ids(&out), ["c", "d", "b"]);
+
+        // A locked first slide goes back first.
+        let first = LOCKED_DECK.replace("id=\"a\">", "id=\"a\" data-locked>");
+        let locked = locked_slides(&first);
+        let (out, _) = restore_locked(&delete(&first, "a").unwrap(), &locked);
+        assert_eq!(out, first);
+
+        // Into a deck the agent emptied.
+        let empty = "<main class=\"deck\">\n  </main>";
+        let (out, restored) = restore_locked(empty, &locked);
+        assert_eq!(restored, ["a", "b", "d"]);
+        assert_eq!(ids(&out), ["a", "b", "d"]);
     }
 
     fn hidden(html: &str) -> Vec<bool> {
@@ -1262,10 +1769,48 @@ mod tests {
     }
 
     #[test]
+    fn ensure_runtime_flags_the_player_inside_the_css_block() {
+        let out = ensure_runtime(DECK);
+        let flag = out.find(PLAYER_FLAG).expect("player flag installed");
+        assert!(out.find(CSS_START).unwrap() < flag && flag < out.find(CSS_END).unwrap());
+        assert!(
+            flag < out.find("<body").unwrap(),
+            "runs before the body renders"
+        );
+        assert_eq!(out.matches(PLAYER_FLAG).count(), 1);
+        // Decks saved before the flag existed get it on refresh.
+        let old = DECK.replace(
+            "</head>",
+            &format!("{CSS_START}<style>{RUNTIME_CSS}</style>{CSS_END}</head>"),
+        );
+        assert_eq!(ensure_runtime(&old).matches(PLAYER_FLAG).count(), 1);
+    }
+
+    #[test]
     fn ensure_runtime_embeds_the_current_assets() {
         let out = ensure_runtime(DECK);
         assert!(out.contains(RUNTIME_CSS));
         assert!(out.contains(RUNTIME_JS));
+    }
+
+    #[test]
+    fn inlines_cropped_css_backgrounds() {
+        // Crops are CSS backgrounds with offsets; the same image can back several crops.
+        let html = r#"<style>
+#title .hero { background: url("assets/photo.png") 0 -1459px / 1920px auto no-repeat; }
+#closing .photo { background-image: url("assets/photo.png"); background-position: -619px -1032px; }
+</style>"#;
+        let out = inline_assets(html, |p| {
+            (p == "assets/photo.png").then(|| ("image/png".into(), b"ok".to_vec()))
+        });
+        assert_eq!(
+            out.matches(r#"url("data:image/png;base64,b2s=")"#).count(),
+            2,
+            "{out}"
+        );
+        assert!(out.contains(") 0 -1459px / 1920px auto no-repeat;"));
+        assert!(out.contains("background-position: -619px -1032px;"));
+        assert!(!out.contains("assets/"));
     }
 
     #[test]
@@ -1502,4 +2047,111 @@ mod tests {
     }
 
     const THREE_SLIDES: &str = "<html><body><main class=\"deck\">\n  <section class=\"slide\" id=\"a\">A</section>\n  <section class=\"slide\" id=\"b\">B</section>\n  <section class=\"slide\" id=\"c\">C</section>\n</main></body></html>";
+
+    const STYLED: &str = "<!DOCTYPE html><html><head>\n  <title>Talk</title>\n  <style>.x {}</style>\n</head><body>\n  <main class=\"deck\">\n    <section class=\"slide\" id=\"a\"><h1>Big &amp; bold</h1><p>Revenue grew 42% in Q3.</p></section>\n    <div class=\"deck-section\" data-title=\"Part\"></div>\n    <section class=\"slide\" id=\"b\"><style>.y { content: \"keep\" }</style><!-- note --><p>NASA said: hello</p></section>\n  </main>\n</body></html>";
+
+    #[test]
+    fn reads_and_writes_the_template_meta() {
+        assert_eq!(template(STYLED), None);
+        let named = set_template(STYLED, Some("swiss"));
+        assert!(
+            named.contains(
+                "<title>Talk</title>\n  <meta name=\"slopslide-template\" content=\"swiss\">"
+            ),
+            "{named}"
+        );
+        assert_eq!(template(&named).as_deref(), Some("swiss"));
+        let renamed = set_template(&named, Some("a\"b"));
+        assert_eq!(renamed.matches(TEMPLATE_META).count(), 1);
+        assert_eq!(template(&renamed).as_deref(), Some("a\"b"));
+        assert_eq!(set_template(&named, None), STYLED, "removing undoes adding");
+        assert_eq!(set_template(STYLED, None), STYLED);
+        assert_eq!(
+            template("<head><META NAME=\"SlopSlide-Template\" content=\" bento-grid \"></head>")
+                .as_deref(),
+            Some("bento-grid")
+        );
+        assert_eq!(
+            template("<meta name=\"slopslide-template\" content=\"\">"),
+            None
+        );
+        let untitled = set_template("<html><head></head></html>", Some("x"));
+        assert_eq!(
+            untitled,
+            "<html><head>\n  <meta name=\"slopslide-template\" content=\"x\"></head></html>"
+        );
+    }
+
+    #[test]
+    fn strips_slides_and_sections_but_keeps_the_shell() {
+        let shell = strip_slides(STYLED);
+        assert!(find_slides(&shell).is_empty());
+        assert!(find_sections(&shell).is_empty());
+        assert!(shell.contains("<style>.x {}</style>"));
+        assert!(
+            shell.contains("<main class=\"deck\">\n  </main>"),
+            "{shell}"
+        );
+    }
+
+    #[test]
+    fn removes_the_runtime_blocks() {
+        let with = ensure_runtime(STYLED);
+        assert!(with.contains(CSS_START) && with.contains(JS_START));
+        let without = without_runtime(&with);
+        assert!(!without.contains("slopslide:runtime"));
+        assert_eq!(without_runtime(STYLED), STYLED);
+        assert_eq!(find_slides(&without).len(), 2);
+    }
+
+    #[test]
+    fn copies_a_slide_from_another_document() {
+        let deck = "<main class=\"deck\">\n    <section class=\"slide\" id=\"a\">A</section>\n    <section class=\"slide\" id=\"z\">Z</section>\n</main>";
+        let (out, id) = copy_slide(deck, Some("a"), STYLED, "b").unwrap();
+        assert_eq!(id, "b", "keeps the template's id when free");
+        let ids: Vec<_> = find_slides(&out).into_iter().filter_map(|s| s.id).collect();
+        assert_eq!(ids, ["a", "b", "z"]);
+        assert!(out.contains("NASA said"));
+        let (again, second) = copy_slide(&out, None, STYLED, "b").unwrap();
+        assert_eq!(second, "b-2");
+        assert_eq!(
+            find_slides(&again).last().unwrap().id.as_deref(),
+            Some("b-2")
+        );
+        assert!(copy_slide(deck, None, STYLED, "missing").is_err());
+    }
+
+    #[test]
+    fn replaces_slide_text_with_placeholder_words() {
+        let out = with_placeholder_text(STYLED);
+        // Everything outside the slides, and all markup, styles and comments stay.
+        assert!(out.starts_with("<!DOCTYPE html><html><head>\n  <title>Talk</title>"));
+        assert!(out.contains("data-title=\"Part\""));
+        assert!(out.contains("<style>.y { content: \"keep\" }</style><!-- note -->"));
+        assert!(out.contains("<section class=\"slide\" id=\"a\"><h1>"));
+        assert!(out.contains(" &amp; "), "entities stay: {out}");
+        for word in ["Big", "bold", "Revenue", "grew", "NASA", "hello", "42"] {
+            assert!(!out.contains(word), "{word} left in {out}");
+        }
+        assert_eq!(find_slides(&out).len(), 2);
+        // Case and punctuation follow the original.
+        let slides = find_slides(&out);
+        let b = &out[slides[1].range.clone()];
+        let text = b.split("<p>").nth(1).unwrap().split("</p>").next().unwrap();
+        let words: Vec<&str> = text.split(' ').collect();
+        assert_eq!(words.len(), 3, "{text}");
+        assert!(
+            words[0].len() > 1 && words[0].chars().all(char::is_uppercase),
+            "{text}"
+        );
+        assert!(words[1].ends_with(':'), "{text}");
+        assert!(words[2].chars().all(char::is_lowercase), "{text}");
+        let a = &out[slides[0].range.clone()];
+        assert!(a.contains("% "), "digits and symbols keep their shape: {a}");
+        assert_eq!(
+            with_placeholder_text(&out).len(),
+            out.len(),
+            "same shape again"
+        );
+    }
 }

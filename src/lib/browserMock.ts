@@ -7,7 +7,7 @@ interface RawDeck {
   id: string;
   title: string;
   path: string;
-  slides: { id: string; hash: string; hidden: boolean; moved: boolean }[];
+  slides: { id: string; hash: string; hidden: boolean; locked: boolean; moved: boolean }[];
   sections: { index: number; title: string; before: number }[];
   shellHash: string;
   updatedMs: number;
@@ -62,6 +62,12 @@ export function installBrowserMock() {
           ];
         case "agent_running":
           return false;
+        case "list_templates":
+          return (await fetch("/__api/templates")).json();
+        case "stage_template":
+          return `.slopslide/templates/${String(a.template)}.html`;
+        case "codex_permission_modes":
+          throw new Error("Codex permissions require the desktop app.");
         case "lint_deck":
           return [];
         case "save_deck_source":
@@ -76,6 +82,8 @@ export function installBrowserMock() {
           localStorage.setItem(key, JSON.stringify(next));
           return next;
         }
+        case "save_asset":
+          return `assets/${String(a.name)}`;
         case "load_chat":
           return JSON.parse(localStorage.getItem(`mock-chat-${String(a.id)}`) ?? "null");
         default:

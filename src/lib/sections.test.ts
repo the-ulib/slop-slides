@@ -7,7 +7,7 @@ const deck = (sections: [string, number][], ids = ["a", "b", "c"]): Deck => ({
   id: "talk",
   title: "Talk",
   path: "/decks/talk",
-  slides: ids.map((id) => ({ id, hash: id, hidden: false, moved: false })),
+  slides: ids.map((id) => ({ id, hash: id, hidden: false, locked: false, moved: false })),
   sections: sections.map(([title, before], index) => ({ index, title, before })),
   shellHash: "s",
 });

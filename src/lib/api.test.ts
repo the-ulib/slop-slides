@@ -13,7 +13,7 @@ beforeEach(() => {
 // Command names and argument keys must match the #[tauri::command]s in src-tauri/src/lib.rs.
 const CASES = [
   ["listDecks", () => api.listDecks(), "list_decks", undefined],
-  ["createDeck", () => api.createDeck("Talk"), "create_deck", { title: "Talk" }],
+  ["createDeck", () => api.createDeck("Talk"), "create_deck", { title: "Talk", template: null }],
   ["openDeck", () => api.openDeck("talk"), "open_deck", { id: "talk" }],
   ["closeDeck", () => api.closeDeck(), "close_deck", undefined],
   ["loadNarration", () => api.loadNarration("talk"), "load_narration", { id: "talk" }],
@@ -35,6 +35,12 @@ const CASES = [
     () => api.setSlideHidden("talk", "a", true),
     "set_slide_hidden",
     { id: "talk", slide: "a", hidden: true },
+  ],
+  [
+    "setSlideLocked",
+    () => api.setSlideLocked("talk", "a", true),
+    "set_slide_locked",
+    { id: "talk", slide: "a", locked: true },
   ],
   [
     "addSection",
@@ -63,6 +69,7 @@ const CASES = [
     { id: "talk", source: "<html>", base: "<old>" },
   ],
   ["importAssets", () => api.importAssets("talk", ["/a.png"]), "import_assets", { id: "talk", paths: ["/a.png"] }],
+  ["saveAsset", () => api.saveAsset("talk", "shot.png", "aGk="), "save_asset", { id: "talk", name: "shot.png", data: "aGk=" }],
   ["exportDeck", () => api.exportDeck("talk", "/out.html"), "export_deck", { id: "talk", dest: "/out.html" }],
   ["lintDeck", () => api.lintDeck("talk"), "lint_deck", { id: "talk" }],
   ["createImageExportDir", () => api.createImageExportDir("talk", "/out"), "create_image_export_dir", { id: "talk", parent: "/out" }],
@@ -88,9 +95,21 @@ const CASES = [
     { args: { deckId: "talk", prompt: "Hi", provider: "claude", model: "claude-opus-5-5", effort: "high", contextWindow: "1m", compact: false } },
   ],
 
+  ["codexPermissionModes", () => api.codexPermissionModes("talk"), "codex_permission_modes", { id: "talk" }],
+  ["respondApproval", () => api.respondApproval("talk", "request-1", "decline"), "respond_approval", { deckId: "talk", id: "request-1", decision: "decline" }],
   ["interruptAgent", () => api.interruptAgent("talk"), "interrupt_agent", { id: "talk" }],
   ["agentRunning", () => api.agentRunning("talk"), "agent_running", { id: "talk" }],
   ["listProviders", () => api.listProviders(), "list_providers", undefined],
+  ["listTemplates", () => api.listTemplates(), "list_templates", undefined],
+  ["stageTemplate", () => api.stageTemplate("talk", "swiss"), "stage_template", { id: "talk", template: "swiss" }],
+  ["applyTemplate", () => api.applyTemplate("talk", "swiss"), "apply_template", { id: "talk", template: "swiss" }],
+  [
+    "addTemplateSlide",
+    () => api.addTemplateSlide("talk", "swiss", "quote", "intro"),
+    "add_template_slide",
+    { id: "talk", template: "swiss", slide: "quote", after: "intro" },
+  ],
+  ["createTemplate", () => api.createTemplate("talk", "Mine"), "create_template", { id: "talk", name: "Mine" }],
 ] as const;
 
 describe("api", () => {
@@ -98,6 +117,11 @@ describe("api", () => {
     await expect(call()).resolves.toBe("result");
     expect(invoke).toHaveBeenCalledOnce();
     expect(invoke.mock.calls[0]).toEqual(args === undefined ? [command] : [command, args]);
+  });
+
+  it("createDeck passes the chosen template", async () => {
+    await api.createDeck("Talk", "synthwave");
+    expect(invoke).toHaveBeenLastCalledWith("create_deck", { title: "Talk", template: "synthwave" });
   });
 
   it("sendMessage can ask for a compaction instead of a prompt", async () => {

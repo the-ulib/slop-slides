@@ -20,7 +20,7 @@ type Filter = "favorites" | Provider;
 type Row = ProviderModel & { provider: Provider };
 
 /** Closes a popover on outside pointer-down or Escape. */
-function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void) {
+export function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {

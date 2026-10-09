@@ -266,7 +266,7 @@ describe("opening and creating decks", () => {
     const useApp = await freshStore();
     backend({ create_deck: () => DECK, load_chat: () => null, agent_running: () => false });
     await useApp.getState().createDeck("Talk");
-    expect(calls("create_deck")).toEqual([{ title: "Talk" }]);
+    expect(calls("create_deck")).toEqual([{ title: "Talk", template: null }]);
     expect(useApp.getState().deck).toEqual(DECK);
   });
 
@@ -458,6 +458,15 @@ describe("sending a message", () => {
     );
   });
 
+  it("tells the agent when the selected slide is locked", async () => {
+    const useApp = await freshStore();
+    useApp.setState({ deck: deckFor(DECK_HTML.replace(`id="outro"`, `id="outro" data-locked`)), selected: "outro" });
+    await useApp.getState().send("Make it blue", { includeSlide: true, attachments: [] });
+    expect(prompt()).toBe(
+      `[context]\nCurrent slide: <section id="outro"> in deck.html (slide 3 of 3)\nThe current slide is locked (data-locked): do not change it.\n[/context]\n\nMake it blue`,
+    );
+  });
+
   it("sends the bare text when there is no context to add", async () => {
     const useApp = await freshStore();
     useApp.setState({ deck: DECK, selected: "intro" });
@@ -489,6 +498,7 @@ describe("sending a message", () => {
       model: "gpt-6-astra",
       effort: "high",
       contextWindow: null,
+      permissionMode: "ask",
       compact: false,
     });
   });
@@ -831,6 +841,30 @@ describe("agent events", () => {
     return { useApp: store.useApp, emit, reply };
   }
 
+  it("tracks approvals, resolves only the matching request, and expires unanswered requests", async () => {
+    const { emit, reply } = await bridged();
+    const approval = { id: "r1", title: "Run", reason: null, details: "ls", acceptLabel: "Allow once", decisions: ["accept", "decline"] as const };
+    emit({ type: "approvalRequested", approval: { ...approval, decisions: [...approval.decisions] } });
+    emit({ type: "approvalRequested", approval: { ...approval, id: "r2", decisions: [...approval.decisions] } });
+    emit({ type: "approvalResolved", id: "r1" });
+    expect(reply().parts).toMatchObject([{ status: "resolved" }, { status: "pending" }]);
+    emit({ type: "finished", interrupted: true });
+    expect(reply().parts).toMatchObject([{ status: "resolved" }, { status: "expired" }]);
+  });
+
+  it("updates automatic reviews rather than adding duplicate cards", async () => {
+    const { emit, reply } = await bridged();
+    emit({ type: "approvalReview", id: "review-1", status: "inProgress", detail: null });
+    emit({ type: "approvalReview", id: "review-1", status: "approved", detail: "Within scope" });
+    expect(reply().parts).toEqual([{ kind: "approvalReview", id: "review-1", status: "approved", detail: "Within scope" }]);
+  });
+
+  it("ignores approval events for other decks", async () => {
+    const { emit, reply } = await bridged();
+    emit({ type: "approvalRequested", approval: { id: "r", title: "Run", reason: null, details: "ls", acceptLabel: "Allow once", decisions: ["accept"] } }, "another-deck");
+    expect(reply().parts).toEqual([]);
+  });
+
   it("initEventBridge loads the installed providers, or none when the check fails", async () => {
     const store = await freshModule();
     const providers = [{ id: "claude", installed: false, path: null, models: [], error: null }];
@@ -1082,7 +1116,7 @@ describe("deck file changes", () => {
   });
 
   it("follows the agent to a newly added slide", async () => {
-    const added = { ...DECK, slides: [...DECK.slides, { id: "fresh", hash: "f", hidden: false, moved: false }] };
+    const added = { ...DECK, slides: [...DECK.slides, { id: "fresh", hash: "f", hidden: false, locked: false, moved: false }] };
     const { useApp, changed } = await watching(() => added);
     useApp.setState({ running: true });
     changed(["deck.html"]);
@@ -1195,6 +1229,8 @@ describe("lint", () => {
     useApp.getState().fillComposer("fix it");
     useApp.getState().fillComposer("fix it");
     expect(useApp.getState().composerFill).toEqual({ text: "fix it", rev: 2 });
+    useApp.getState().fillComposer("tidy it", { screenshot: ".slopslide/sketches/1.png" });
+    expect(useApp.getState().composerFill).toEqual({ text: "tidy it", rev: 3, screenshot: ".slopslide/sketches/1.png" });
   });
 
   it("lintFixPrompt lists every issue and asks the agent to verify with its tool", async () => {
@@ -1377,6 +1413,16 @@ describe("editing slides on the stage", () => {
     expect(useApp.getState()).toMatchObject({ editing: false, slideUndo: [], slideRedo: [] });
   });
 
+  it("does not enter edit mode on a locked slide", async () => {
+    const useApp = await freshStore();
+    useApp.setState({ deck: deckFor(DECK_HTML.replace(`id="intro"`, `id="intro" data-locked`)), selected: "intro", editing: false });
+    useApp.getState().setEditing(true);
+    expect(useApp.getState().editing).toBe(false);
+    useApp.getState().select("outro");
+    useApp.getState().setEditing(true);
+    expect(useApp.getState().editing).toBe(true);
+  });
+
   describe("tidying the layout", () => {
     let target: HTMLElement;
     beforeEach(() => {
@@ -1387,17 +1433,62 @@ describe("editing slides on the stage", () => {
     });
     afterEach(() => target.remove());
 
-    it("sends the agent a screenshot of the slide with tidy-up instructions", async () => {
+    it("screenshots the slide, leaves edit mode, and prepares the request in the composer", async () => {
       const { useApp, TIDY_PROMPT } = await freshModule();
       backend({ capture_sketch: () => ".slopslide/sketches/2-cd.png" });
-      useApp.setState({ deck: DECK, selected: "intro" });
+      useApp.setState({ deck: DECK, selected: "intro", chatOpen: false, composerFill: null, editing: true });
       await useApp.getState().tidyLayout();
       expect(calls("capture_sketch")).toHaveLength(1);
+      expect(calls("send_message")).toHaveLength(0);
+      expect(useApp.getState().messages).toEqual([]);
+      expect(useApp.getState()).toMatchObject({
+        chatOpen: true,
+        editing: false,
+        composerFill: { text: TIDY_PROMPT, screenshot: ".slopslide/sketches/2-cd.png" },
+      });
+    });
+
+    it("does not tidy a locked slide", async () => {
+      const { useApp } = await freshModule();
+      useApp.setState({ deck: deckFor(DECK_HTML.replace(`id="intro"`, `id="intro" data-locked`)), selected: "intro", composerFill: null });
+      await useApp.getState().tidyLayout();
+      expect(calls("capture_sketch")).toEqual([]);
+      expect(useApp.getState().composerFill).toBeNull();
+    });
+
+    it("still prepares the request when the screenshot fails", async () => {
+      const { useApp, TIDY_PROMPT } = await freshModule();
+      backend({
+        capture_sketch: () => {
+          throw "slide screenshots are not supported on this platform yet";
+        },
+      });
+      useApp.setState({ deck: DECK, selected: "intro", composerFill: null });
+      await useApp.getState().tidyLayout();
+      expect(useApp.getState().composerFill).toEqual({ text: TIDY_PROMPT, rev: 1 });
+    });
+
+    it("lists the overflow the editor found in the request", async () => {
+      const { useApp, tidyPrompt } = await freshModule();
+      backend({ capture_sketch: () => ".slopslide/sketches/4.png" });
+      useApp.setState({ deck: DECK, selected: "intro" });
+      const overflow = ['<p> "Long" runs past the bottom edge by 80px', "<h1> is cut off by its own box"];
+      await useApp.getState().tidyLayout(overflow);
+      expect(useApp.getState().composerFill?.text).toBe(tidyPrompt(overflow));
+      expect(tidyPrompt(overflow)).toContain(`The editor found overflow:\n- ${overflow[0]}\n- ${overflow[1]}`);
+      expect(tidyPrompt()).toBe(tidyPrompt([]));
+    });
+
+    it("sends the screenshot handed over with the message", async () => {
+      const { useApp, TIDY_PROMPT } = await freshModule();
+      useApp.setState({ deck: DECK, selected: "intro" });
+      await useApp.getState().send(TIDY_PROMPT, { includeSlide: true, attachments: [], screenshot: ".slopslide/sketches/2-cd.png" });
+      expect(calls("capture_sketch")).toHaveLength(0);
       expect((calls("send_message")[0]!.args as { prompt: string }).prompt).toBe(
         [
           "[context]",
           'Current slide: <section id="intro"> in deck.html (slide 1 of 3)',
-          "Screenshot: .slopslide/sketches/2-cd.png (the current slide as it looks now, with the user's hand edits)",
+          "Screenshot: .slopslide/sketches/2-cd.png (screenshot of the slide with the user's hand edits)",
           "[/context]",
           "",
           TIDY_PROMPT,
@@ -1411,28 +1502,16 @@ describe("editing slides on the stage", () => {
       });
     });
 
-    it("lists the overflow the editor found in the request", async () => {
-      const { useApp, tidyPrompt } = await freshModule();
-      backend({ capture_sketch: () => ".slopslide/sketches/4.png" });
-      useApp.setState({ deck: DECK, selected: "intro" });
-      const overflow = ['<p> "Long" runs past the bottom edge by 80px', "<h1> is cut off by its own box"];
-      await useApp.getState().tidyLayout(overflow);
-      const prompt = (calls("send_message")[0]!.args as { prompt: string }).prompt;
-      expect(prompt.endsWith(tidyPrompt(overflow))).toBe(true);
-      expect(prompt).toContain(`The editor found overflow:\n- ${overflow[0]}\n- ${overflow[1]}`);
-      expect(tidyPrompt()).toBe(tidyPrompt([]));
-    });
-
-    it("keeps any sketch on the slide with the message", async () => {
+    it("captures any sketch alongside the handed-over screenshot", async () => {
       const useApp = await freshStore();
       backend({ capture_sketch: () => ".slopslide/sketches/3.png" });
       const ink = [{ tool: "pen" as const, color: "#f00", points: [[0.5, 0.5]] as [number, number][] }];
       useApp.setState({ deck: DECK, selected: "intro", sketches: { intro: ink } });
-      await useApp.getState().tidyLayout();
+      await useApp.getState().send("Tidy", { includeSlide: true, attachments: [], screenshot: ".slopslide/sketches/2.png" });
       expect(calls("capture_sketch")).toHaveLength(1);
       expect(useApp.getState().messages[0]).toMatchObject({
         sketch: { image: ".slopslide/sketches/3.png" },
-        screenshot: ".slopslide/sketches/3.png",
+        screenshot: ".slopslide/sketches/2.png",
       });
       expect(useApp.getState().sketches).toEqual({ intro: ink });
     });
@@ -1456,8 +1535,9 @@ describe("narration integration", () => {
     await useApp.getState().draftNarration("slide", "engineers", "1");
     const commands = invoke.mock.calls.map(([c]) => c);
     expect(commands.indexOf("save_narration")).toBeLessThan(commands.indexOf("send_message"));
-    const request = calls("send_message")[0]!.args as { prompt: string; provider: string };
+    const request = calls("send_message")[0]!.args as { prompt: string; provider: string; permissionMode: string };
     expect(request.provider).toBe("codex");
+    expect(request.permissionMode).toBe("ask");
     expect(request.prompt).toContain('exact slide IDs: ["intro"]');
     expect(request.prompt).toContain("write_narration MCP tools");
     expect(useApp.getState().sidebarTab).toBe("chat");
@@ -1501,5 +1581,194 @@ describe("narration integration", () => {
     expect(useApp.getState().assetsRev).toBe(0);
     expect(useApp.getState().selected).toBe("intro");
     await useNarration.getState().load(null);
+  });
+});
+
+describe("Codex permissions", () => {
+  it("stops a Codex turn and saves a closed transcript before leaving the deck", async () => {
+    const store = await freshStore();
+    store.setState({ deck: deckFor(DECK_HTML), running: true, messages: [assistantMessage({ provider: "codex", status: "streaming", parts: [{ kind: "approval", status: "pending", approval: { id: "live", title: "Run", reason: null, details: "ls", acceptLabel: "Allow once", decisions: ["accept"] } }] })] });
+    await store.getState().closeDeck();
+    const order = invoke.mock.calls.map(([command]) => command);
+    expect(order.indexOf("interrupt_agent")).toBeLessThan(order.indexOf("save_chat"));
+    expect(order.indexOf("save_chat")).toBeLessThan(order.indexOf("close_deck"));
+    expect(calls("save_chat")[0]!.chat).toMatchObject([{ status: "interrupted", parts: [{ status: "expired" }] }]);
+    expect(store.getState().deck).toBeNull();
+  });
+
+  it("keeps the existing background behavior for other providers", async () => {
+    const store = await freshStore();
+    store.setState({ deck: deckFor(DECK_HTML), running: true, messages: [assistantMessage({ provider: "claude", status: "streaming" })] });
+    await store.getState().closeDeck();
+    expect(calls("interrupt_agent")).toHaveLength(0);
+  });
+
+  it("defaults to Ask, remembers valid choices, and rejects invalid saved values", async () => {
+    let store = await freshStore();
+    expect(store.getState().permissionMode).toBe("ask");
+    store.getState().setPermissionMode("autoReview");
+    expect(localStorage.getItem("slopslide.codexPermissions")).toBe("autoReview");
+    store = await freshStore();
+    expect(store.getState().permissionMode).toBe("autoReview");
+    localStorage.setItem("slopslide.codexPermissions", "__proto__");
+    expect((await freshStore()).getState().permissionMode).toBe("ask");
+  });
+
+  it("cannot change the mode during a turn", async () => {
+    const store = await freshStore();
+    store.setState({ running: true });
+    store.getState().setPermissionMode("fullAccess");
+    expect(store.getState().permissionMode).toBe("ask");
+    expect(localStorage.getItem("slopslide.codexPermissions")).toBeNull();
+  });
+
+  it("sends the selected mode only to Codex", async () => {
+    const store = await freshStore();
+    store.setState({ deck: deckFor(DECK_HTML), permissionMode: "autoReview", selection: { provider: "codex", model: "m", label: "M", effort: "high", contextWindow: null } });
+    await store.getState().send("slides", { includeSlide: false, attachments: [] });
+    expect(calls("send_message")[0]!.args).toMatchObject({ permissionMode: "autoReview" });
+    store.setState({ running: false, selection: { ...store.getState().selection, provider: "claude" } });
+    await store.getState().send("slides", { includeSlide: false, attachments: [] });
+    expect(calls("send_message")[1]!.args).not.toHaveProperty("permissionMode");
+  });
+
+  it("restored approvals are closed rather than reusable", async () => {
+    const store = await freshStore();
+    const message = assistantMessage({ status: "streaming", parts: [{ kind: "approval", status: "pending", approval: { id: "old", title: "Run", reason: null, details: "ls", acceptLabel: "Allow once", decisions: ["accept"] } }] });
+    backend({ open_deck: () => deckFor(DECK_HTML), load_chat: () => [message], agent_running: () => false });
+    await store.getState().openDeck("talk");
+    expect((store.getState().messages[0] as AssistantMessage).parts[0]).toMatchObject({ status: "expired" });
+  });
+});
+
+describe("templates", () => {
+  const SWISS = { id: "swiss", title: "Swiss Design", builtin: true, path: null, slides: ["title", "split", "quote"] };
+  const MINE = { id: "mine", title: "Mine", builtin: false, path: "/t/mine", slides: ["cover"] };
+  const STAGED = ".slopslide/templates/swiss.html";
+
+  async function storeWith(deck: Deck, selected: string | null = "intro") {
+    const useApp = await freshStore();
+    useApp.setState({ deck, selected, templates: [MINE, SWISS], chatOpen: true });
+    return useApp;
+  }
+
+  it("loads the template list", async () => {
+    const useApp = await freshStore();
+    backend({ list_templates: () => [MINE, SWISS] });
+    await useApp.getState().refreshTemplates();
+    expect(useApp.getState().templates).toEqual([MINE, SWISS]);
+    backend({
+      list_templates: () => {
+        throw "cannot locate home folder";
+      },
+    });
+    await useApp.getState().refreshTemplates();
+    expect(useApp.getState()).toMatchObject({ templates: [], error: "cannot locate home folder" });
+  });
+
+  it("restyles a deck with slides through a prompt in the composer", async () => {
+    const useApp = await storeWith(DECK);
+    useApp.setState({ chatOpen: false });
+    backend({ stage_template: () => STAGED });
+    await useApp.getState().applyStyle("swiss");
+    expect(calls("stage_template")).toEqual([{ id: DECK.id, template: "swiss" }]);
+    expect(calls("apply_template")).toEqual([]);
+    const text = useApp.getState().composerFill?.text ?? "";
+    expect(text).toContain('"Swiss Design" style');
+    expect(text).toContain(STAGED);
+    expect(text).toContain('<meta name="slopslide-template" content="swiss">');
+    expect(useApp.getState().chatOpen).toBe(true);
+  });
+
+  it("gives an empty deck the style directly", async () => {
+    const empty = { ...DECK, slides: [] };
+    const useApp = await storeWith(empty, null);
+    const styled = { ...empty, template: "swiss", shellHash: "styled" };
+    backend({ apply_template: () => styled });
+    await useApp.getState().applyStyle("swiss");
+    expect(calls("apply_template")).toEqual([{ id: DECK.id, template: "swiss" }]);
+    expect(useApp.getState().deck).toEqual(styled);
+    expect(useApp.getState().composerFill).toBeNull();
+  });
+
+  it("ignores unknown templates and reports failures", async () => {
+    const useApp = await storeWith(DECK);
+    await useApp.getState().applyStyle("nope");
+    expect(invoke).not.toHaveBeenCalled();
+    backend({
+      stage_template: () => {
+        throw "template not found: swiss";
+      },
+    });
+    await useApp.getState().applyStyle("swiss");
+    expect(useApp.getState().error).toBe("template not found: swiss");
+    expect(useApp.getState().composerFill).toBeNull();
+  });
+
+  it("copies a layout into a deck that uses the template", async () => {
+    const useApp = await storeWith({ ...DECK, template: "swiss" });
+    const next = { ...DECK, template: "swiss", slides: [...DECK.slides, { id: "quote", hash: "q", hidden: false, locked: false, moved: false }] };
+    backend({ add_template_slide: () => ({ deck: next, slide: "quote" }) });
+    await useApp.getState().addLayoutSlide("swiss", "quote");
+    expect(calls("add_template_slide")).toEqual([{ id: DECK.id, template: "swiss", slide: "quote", after: "intro" }]);
+    expect(useApp.getState()).toMatchObject({ deck: next, selected: "quote", composerFill: null });
+  });
+
+  it("asks the agent for a layout from another template", async () => {
+    const useApp = await storeWith({ ...DECK, template: "mine" });
+    backend({ stage_template: () => STAGED });
+    await useApp.getState().addLayoutSlide("swiss", "split");
+    expect(calls("add_template_slide")).toEqual([]);
+    const text = useApp.getState().composerFill?.text ?? "";
+    expect(text).toContain("after this one");
+    expect(text).toContain('the "Split" layout of the "Swiss Design" template (slide `split` in `.slopslide/templates/swiss.html`)');
+    expect(text).toContain("this deck's design system");
+
+    useApp.setState({ selected: null });
+    await useApp.getState().addLayoutSlide("swiss", "split");
+    expect(useApp.getState().composerFill?.text).toContain("at the end of the deck");
+  });
+
+  it("asks the agent to change the selected slide's layout", async () => {
+    const useApp = await storeWith({ ...DECK, template: "swiss" });
+    backend({ stage_template: () => STAGED });
+    await useApp.getState().changeLayout("swiss", "quote");
+    const same = useApp.getState().composerFill?.text ?? "";
+    expect(same).toMatch(/^Change the layout of this slide to the "Quote" layout/);
+    expect(same).toMatch(/Keep this slide's id and its content\.$/);
+
+    useApp.setState({ deck: { ...DECK, template: null } });
+    await useApp.getState().changeLayout("swiss", "quote");
+    expect(useApp.getState().composerFill?.text).toMatch(/and use this deck's design system\.$/);
+
+    useApp.setState({ selected: null, composerFill: null });
+    await useApp.getState().changeLayout("swiss", "quote");
+    expect(useApp.getState().composerFill).toBeNull();
+  });
+
+  it("does not change the layout of a locked slide", async () => {
+    const useApp = await storeWith(deckFor(DECK_HTML.replace(`id="intro"`, `id="intro" data-locked`)));
+    backend({ stage_template: () => STAGED });
+    useApp.setState({ selected: "intro", composerFill: null });
+    await useApp.getState().changeLayout("swiss", "quote");
+    expect(useApp.getState().composerFill).toBeNull();
+    expect(calls("stage_template")).toEqual([]);
+  });
+
+  it("saves the deck as a template and reloads the list", async () => {
+    const useApp = await storeWith(DECK);
+    const created = { id: "talk", title: "Talk", builtin: false, path: "/t/talk", slides: ["intro"] };
+    backend({ create_template: () => created, list_templates: () => [created, MINE, SWISS] });
+    expect(await useApp.getState().saveAsTemplate("Talk")).toEqual(created);
+    expect(calls("create_template")).toEqual([{ id: DECK.id, name: "Talk" }]);
+    expect(useApp.getState().templates).toEqual([created, MINE, SWISS]);
+
+    backend({
+      create_template: () => {
+        throw "The deck has no slides to make a template from.";
+      },
+    });
+    expect(await useApp.getState().saveAsTemplate("Talk")).toBeNull();
+    expect(useApp.getState().error).toBe("The deck has no slides to make a template from.");
   });
 });

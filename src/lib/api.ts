@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { NarrationDocument, NarrationManifest } from "./narration";
+import type { Approval, ApprovalDecision, PermissionMode } from "./permissions";
 import type { Stroke } from "./ink";
 import type { Provider, ProviderInfo } from "./models";
 
@@ -19,6 +20,8 @@ export interface Slide {
   hash: string;
   /** Has `data-hidden`: skipped when presenting, shown muted in the editor. */
   hidden: boolean;
+  /** Has `data-locked`: neither the user nor the agent can change it until it is unlocked. */
+  locked: boolean;
   /** Has elements moved by hand (`data-moved`) that the agent has not tidied up yet. */
   moved: boolean;
 }
@@ -42,6 +45,20 @@ export interface Deck {
   shellHash: string;
   /** Review marks the user drew, by slide id, stored in deck.html. */
   review?: Record<string, Stroke[]>;
+  /** Id of the template the deck's design comes from (its `slopslide-template` meta). */
+  template?: string | null;
+}
+
+/** A deck of example layouts in one style; each slide is a layout for new or changed slides. */
+export interface TemplateSummary {
+  id: string;
+  title: string;
+  /** Ships with the app; otherwise it is the user's, in `~/.slopslides/templates/<id>`. */
+  builtin: boolean;
+  /** Folder of a user template. */
+  path: string | null;
+  /** Slide ids, one per layout, in order. */
+  slides: string[];
 }
 
 export interface CreatedSlide {
@@ -66,6 +83,9 @@ export interface LintIssue {
 }
 
 export type AgentEvent =
+  | { type: "approvalRequested"; approval: Approval }
+  | { type: "approvalResolved"; id: string }
+  | { type: "approvalReview"; id: string; status: string; detail: string | null }
   | { type: "started"; sessionId: string | null }
   | { type: "thinking" }
   | { type: "textStart" }
@@ -98,7 +118,8 @@ export interface DeckChanged {
 
 export const api = {
   listDecks: () => invoke<DeckSummary[]>("list_decks"),
-  createDeck: (title: string) => invoke<Deck>("create_deck", { title }),
+  /** With a template, the new deck takes its styles (and names it). */
+  createDeck: (title: string, template: string | null = null) => invoke<Deck>("create_deck", { title, template }),
   openDeck: (id: string) => invoke<Deck>("open_deck", { id }),
   closeDeck: () => invoke<void>("close_deck"),
   loadDeck: (id: string) => invoke<Deck>("load_deck", { id }),
@@ -115,6 +136,8 @@ export const api = {
     invoke<CreatedSlide>("duplicate_slide", { id, slide }),
   setSlideHidden: (id: string, slide: string, hidden: boolean) =>
     invoke<Deck>("set_slide_hidden", { id, slide, hidden }),
+  setSlideLocked: (id: string, slide: string, locked: boolean) =>
+    invoke<Deck>("set_slide_locked", { id, slide, locked }),
   addSection: (id: string, before: string | null, title: string) =>
     invoke<Deck>("add_section", { id, before, title }),
   renameSection: (id: string, index: number, title: string) =>
@@ -127,6 +150,9 @@ export const api = {
   saveDeckSource: (id: string, source: string, base: string | null) =>
     invoke<Deck>("save_deck_source", { id, source, base }),
   importAssets: (id: string, paths: string[]) => invoke<string[]>("import_assets", { id, paths }),
+  /** Saves pasted file contents (base64) into the deck's assets; returns its `assets/…` ref. */
+  saveAsset: (id: string, name: string, data: string) =>
+    invoke<string>("save_asset", { id, name, data }),
   exportDeck: (id: string, dest: string) => invoke<void>("export_deck", { id, dest }),
   /** Creates a new folder named after the deck inside `parent`; returns its path. */
   createImageExportDir: (id: string, parent: string) =>
@@ -155,13 +181,27 @@ export const api = {
   sendMessage: (
     deckId: string,
     prompt: string,
-    selection: { provider: Provider; model: string; effort: string; contextWindow: string | null },
+    selection: { provider: Provider; model: string; effort: string; contextWindow: string | null; permissionMode?: PermissionMode },
     /** Summarize the conversation so far instead of sending `prompt`. */
     compact = false,
   ) => invoke<void>("send_message", { args: { deckId, prompt, ...selection, compact } }),
+  codexPermissionModes: (id: string) => invoke<PermissionMode[]>("codex_permission_modes", { id }),
+  respondApproval: (deckId: string, id: string, decision: ApprovalDecision) =>
+    invoke<void>("respond_approval", { deckId, id, decision }),
   interruptAgent: (id: string) => invoke<void>("interrupt_agent", { id }),
   agentRunning: (id: string) => invoke<boolean>("agent_running", { id }),
   listProviders: () => invoke<ProviderInfo[]>("list_providers"),
+  /** The user's templates first, then the built-in ones. */
+  listTemplates: () => invoke<TemplateSummary[]>("list_templates"),
+  /** Copies the template into the deck's internals for the agent; returns its deck-relative path. */
+  stageTemplate: (id: string, template: string) => invoke<string>("stage_template", { id, template }),
+  /** Gives a deck without slides the template's styles. */
+  applyTemplate: (id: string, template: string) => invoke<Deck>("apply_template", { id, template }),
+  /** Inserts a copy of the template's slide after `after` (or at the end). */
+  addTemplateSlide: (id: string, template: string, slide: string, after: string | null) =>
+    invoke<CreatedSlide>("add_template_slide", { id, template, slide, after }),
+  /** Saves the deck as a user template with placeholder text in place of its content. */
+  createTemplate: (id: string, name: string) => invoke<TemplateSummary>("create_template", { id, name }),
 };
 
 export function errorMessage(error: unknown): string {

@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   check:
@@ -29,6 +30,6 @@ jobs:
         with:
           workspaces: src-tauri -> target
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      - run: pnpm build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Run all checks, including Codex protocol and subprocess regressions
+        shell: bash
+        run: ./check.sh

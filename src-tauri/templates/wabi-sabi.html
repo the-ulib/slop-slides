@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wabi-Sabi</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500&display=swap");
+
+    /* Layouts shared by every SlopSlide template: title, section, bullets, split, stats,
+       quote, closing. The style below this block gives them their look. */
+    .slide {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 120px 140px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 32px;
+      line-height: 1.4;
+    }
+    .slide h1, .slide h2, .slide p, .slide ul, .slide blockquote, .slide figure { margin: 0; }
+    .slide h1, .slide h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.04; }
+    .slide h1 { font-size: 128px; }
+    .slide h2 { font-size: 88px; }
+    .slide .deco { position: absolute; inset: 0; pointer-events: none; }
+    .slide .deco span { position: absolute; display: block; }
+    .slide .frame { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 32px; max-width: 1400px; }
+    .slide .eyebrow { font-size: 26px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+    .slide .lede { font-size: 40px; color: var(--muted); max-width: 1200px; }
+    .slide .byline { font-size: 26px; color: var(--muted); }
+    .slide .number { font-family: var(--font-display); font-size: 160px; line-height: 1; color: var(--accent); }
+    .layout-bullets, .layout-stats { justify-content: flex-start; gap: 72px; }
+    .slide .frame-head { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 20px; max-width: 1400px; }
+    .slide .points { position: relative; display: flex; flex-direction: column; gap: 36px; max-width: 1450px; padding: 0; list-style: none; }
+    .slide .points li { position: relative; padding-left: 52px; font-size: 38px; color: var(--muted); }
+    .slide .points li::before { content: ""; position: absolute; left: 0; top: 0.5em; width: 20px; height: 20px; background: var(--accent); }
+    .slide .points strong { color: var(--ink); }
+    .layout-split { flex-direction: row; align-items: center; gap: 100px; }
+    .slide .text { position: relative; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 32px; }
+    .slide .body { font-size: 34px; color: var(--muted); }
+    .slide .visual { position: relative; flex: 0 0 720px; height: 720px; }
+    .slide .placeholder { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--panel); color: var(--muted); font-size: 24px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .slide .stats { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 56px; }
+    .slide .stat { display: flex; flex-direction: column; gap: 16px; }
+    .slide .value { font-family: var(--font-display); font-size: 150px; font-weight: 700; line-height: 1; color: var(--accent); }
+    .slide .label { font-size: 30px; color: var(--muted); }
+    .layout-quote { align-items: flex-start; gap: 48px; }
+    .layout-quote blockquote { position: relative; max-width: 1500px; font-family: var(--font-display); font-size: 80px; line-height: 1.15; }
+    .slide .cite { position: relative; font-size: 30px; color: var(--muted); }
+    .layout-closing h2 { font-size: 160px; }
+
+    /* Wabi-Sabi */
+    :root {
+      --bg: #ebe4d6;
+      --ink: #2e2a25;
+      --muted: #6f665a;
+      --accent: #9b5a3c;
+      --panel: #d8cdb8;
+      --font-display: "Shippori Mincho", "Hiragino Mincho ProN", Georgia, serif;
+      --font-body: "Zen Kaku Gothic New", "Hiragino Sans", sans-serif;
+    }
+    .slide {
+      padding: 140px 180px;
+      background:
+        radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.4), transparent 50%),
+        radial-gradient(ellipse at 80% 90%, rgba(155, 90, 60, 0.1), transparent 45%),
+        repeating-radial-gradient(circle at 30% 60%, rgba(46, 42, 37, 0.025) 0 1px, transparent 1px 3px),
+        var(--bg);
+    }
+    .slide h1, .slide h2 { font-weight: 500; letter-spacing: 0.02em; line-height: 1.2; }
+    .slide h1 { font-size: 112px; }
+    .slide h2 { font-size: 76px; }
+    .slide .deco span:nth-child(1) { right: 220px; top: 50%; width: 520px; height: 500px; margin-top: -250px; border: 34px solid var(--ink); border-left-color: transparent; border-radius: 52% 48% 50% 46% / 48% 54% 46% 52%; transform: rotate(-20deg); opacity: 0.85; filter: blur(0.6px); }
+    .slide .deco span:nth-child(2) { right: 470px; top: 270px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); }
+    .slide .deco span:nth-child(3) { left: 180px; bottom: 120px; width: 160px; height: 2px; background: var(--ink); opacity: 0.6; }
+    .layout-bullets .deco span:nth-child(1), .layout-bullets .deco span:nth-child(2), .layout-stats .deco span:nth-child(1), .layout-stats .deco span:nth-child(2), .layout-split .deco span:nth-child(1), .layout-split .deco span:nth-child(2) { display: none; }
+    .layout-quote .deco span:nth-child(1) { opacity: 0.12; }
+    .slide .frame { gap: 40px; }
+    .slide .eyebrow { font-weight: 500; letter-spacing: 0.3em; font-size: 22px; color: var(--accent); }
+    .slide .lede { font-size: 36px; line-height: 1.6; }
+    .slide .byline { font-size: 22px; letter-spacing: 0.16em; }
+    .slide .number { font-size: 120px; font-weight: 500; color: var(--accent); }
+    .layout-bullets, .layout-stats { gap: 88px; }
+    .slide .points { gap: 44px; }
+    .slide .points li { padding-left: 72px; font-size: 34px; line-height: 1.6; }
+    .slide .points li::before { top: 0.75em; width: 40px; height: 2px; background: var(--accent); }
+    .slide .points strong { font-family: var(--font-display); font-weight: 500; }
+    .layout-split { gap: 140px; }
+    .slide .visual { flex-basis: 640px; height: 780px; }
+    .slide .visual .placeholder { border-radius: 4px 12px 6px 16px; background: var(--panel); color: var(--muted); box-shadow: 0 30px 60px -30px rgba(46, 42, 37, 0.35); letter-spacing: 0.3em; }
+    .slide .stats { gap: 80px; }
+    .slide .stat { padding-top: 40px; border-top: 2px solid var(--ink); }
+    .slide .value { font-weight: 500; font-size: 128px; color: var(--ink); }
+    .slide .stat:first-child .value { color: var(--accent); }
+    .layout-quote blockquote { font-weight: 500; font-size: 68px; line-height: 1.45; }
+    .slide .cite { letter-spacing: 0.16em; }
+    .slide .cite::before { content: "— "; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide layout-title" id="title">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <p class="eyebrow reveal">Category · 2026</p>
+        <h1 class="reveal reveal-delay-1">Presentation title</h1>
+        <p class="lede reveal reveal-delay-2">A one-line subtitle that frames the story you are about to tell.</p>
+        <p class="byline reveal reveal-delay-3">Presenter name · Event or date</p>
+      </div>
+    </section>
+    <section class="slide layout-section" id="section">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <p class="number reveal">01</p>
+        <h2 class="reveal reveal-delay-1">Section title</h2>
+        <p class="lede reveal reveal-delay-2">What this part of the talk covers, in one sentence.</p>
+      </div>
+    </section>
+    <section class="slide layout-bullets" id="bullets">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <header class="frame-head">
+        <p class="eyebrow reveal">Key points</p>
+        <h2 class="reveal reveal-delay-1">A headline that states the point</h2>
+      </header>
+      <ul class="points">
+        <li class="reveal reveal-delay-2"><strong>First idea.</strong> One short line of supporting detail.</li>
+        <li class="reveal reveal-delay-3"><strong>Second idea.</strong> Keep each point to a single thought.</li>
+        <li class="reveal reveal-delay-4"><strong>Third idea.</strong> Three to five points read best.</li>
+      </ul>
+    </section>
+    <section class="slide layout-split" id="split">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="text">
+        <p class="eyebrow reveal">Context</p>
+        <h2 class="reveal reveal-delay-1">Words on one side, a visual on the other</h2>
+        <p class="body reveal reveal-delay-2">Two or three sentences that explain the picture. Swap the placeholder for a photo, chart, or diagram.</p>
+      </div>
+      <figure class="visual reveal reveal-delay-2">
+        <div class="placeholder"><span>Image or diagram</span></div>
+      </figure>
+    </section>
+    <section class="slide layout-stats" id="stats">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <header class="frame-head">
+        <p class="eyebrow reveal">By the numbers</p>
+        <h2 class="reveal reveal-delay-1">Three figures that tell the story</h2>
+      </header>
+      <div class="stats">
+        <div class="stat reveal reveal-delay-2"><span class="value">42%</span><span class="label">What the first number measures</span></div>
+        <div class="stat reveal reveal-delay-3"><span class="value">3.5×</span><span class="label">What the second number measures</span></div>
+        <div class="stat reveal reveal-delay-4"><span class="value">120</span><span class="label">What the third number measures</span></div>
+      </div>
+    </section>
+    <section class="slide layout-quote" id="quote">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <blockquote class="reveal">“A memorable line from a customer, an expert, or the team that makes the point land.”</blockquote>
+      <p class="cite reveal reveal-delay-1">Name Surname, Role at Company</p>
+    </section>
+    <section class="slide layout-closing" id="closing">
+      <div class="deco" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="frame">
+        <h2 class="reveal">Thank you</h2>
+        <p class="lede reveal reveal-delay-1">Questions, next steps, or a call to action.</p>
+        <p class="byline reveal reveal-delay-2">name@company.com · company.com</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
