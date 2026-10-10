@@ -150,6 +150,12 @@ Mac is the first complete video-export target. Preserve platform-neutral narrati
 
 ### Interactive mockup
 
+**Current UI review — 10 October:** compare the [two narration workflow alternatives](mockups/narration-workflow-review.html). **Slide first** keeps the selected slide's presenter, script, generation and recordings together, with presentation preparation/preview/export below. **Separate workspace** starts with the script and has **This slide / Presentation** views inside Narration; the Presentation view contains readiness and batch/video actions. Both use the existing left thumbnails as the only slide navigation. After user feedback, the duplicate slide list was removed from the Presentation view; audio readiness appears on the left thumbnails instead. Chat stays on the right and remains the actual app's startup default. The prototypes initially show Narration so the alternatives can be compared directly.
+
+Both alternatives include a named recording/import → preview/save presenter flow, instructions visible before recording, retry without losing the name, per-slide choices, older recording selection and preparation of missing audio before export. All audio/recording/export actions are simulated. The app has not adopted either layout. **Next step:** review voice creation, switching to an older take and preparing/exporting the presentation in both variants; refine the preferred design once, then implement a focused frontend cleanup using existing commands/provider contracts. The provisional recommendation is Separate workspace because slide and whole-presentation actions have explicit scopes. Tone/delivery and new connector features stay deferred. See the [review notes and test cases](mockups/narration-workflow-review.md).
+
+The earlier concept below remains available as historical context:
+
 Open the [narration experience mockup](mockups/narration-experience.html) in a browser. This standalone copy is stored with the plan so it remains available outside the chat. It includes these interactive views:
 
 - **Editor:** slide thumbnails, center preview and Chat/Narration tabs in the right sidebar. Select slides, edit a script and simulate regeneration.
