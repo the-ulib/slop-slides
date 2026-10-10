@@ -69,7 +69,7 @@ pub fn handle(request: &Value, dir: &Path) -> Option<Value> {
             "inputSchema": { "type": "object", "properties": {} },
         }, {
             "name": READ_NARRATION,
-            "description": "Read the current narration manifest and file fingerprint. Missing narration returns an empty version 1 manifest. Use this before write_narration.",
+            "description": "Read the current narration manifest and file fingerprint. Also returns the narration skill and provider controls/guidance. Missing narration returns an empty version 3 manifest. Use this before write_narration.",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
         }, {
             "name": WRITE_NARRATION,
@@ -86,7 +86,7 @@ pub fn handle(request: &Value, dir: &Path) -> Option<Value> {
             json!({ "content": [{ "type": "text", "text": text }], "isError": failed })
         }
         "tools/call" if request["params"]["name"] == READ_NARRATION => {
-            narration_result(narration::load(dir))
+            narration_read_result(narration::load(dir))
         }
         "tools/call" if request["params"]["name"] == WRITE_NARRATION => {
             let args = &request["params"]["arguments"];
@@ -96,6 +96,14 @@ pub fn handle(request: &Value, dir: &Path) -> Option<Value> {
                     let base = args["base"].as_str().ok_or_else(|| {
                         crate::error::Error::msg("Missing narration base fingerprint.")
                     })?;
+                    let current = narration::load(dir)?;
+                    for (id, script) in &manifest.slides {
+                        if current.manifest.slides.get(id).is_some_and(|s| s.text == script.text) { continue; }
+                        let plan = speech_connector::narration::parse(&script.text).map_err(|e| crate::error::Error::msg(format!("Slide {id}: {e}")))?;
+                        let provider = script.speech_provider_id_override.as_deref().unwrap_or(&manifest.speech_provider_id);
+                        if plan.marked && provider_guidance(provider).is_none() { return Err(crate::error::Error::msg("Pause controls are not verified for this provider. Use plain narration.")); }
+                        if !script.text.trim().is_empty() && !plan.has_speech() { return Err(crate::error::Error::msg("Write spoken text as well as pause markers.")); }
+                    }
                     narration::save(dir, manifest, base)
                 });
             narration_result(result)
@@ -104,6 +112,41 @@ pub fn handle(request: &Value, dir: &Path) -> Option<Value> {
         method => return Some(error(id, -32601, &format!("method not found: {method}"))),
     };
     Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+}
+
+fn provider_guidance(id: &str) -> Option<Value> {
+    use speech_connector::SpeechProvider;
+    let descriptor = match id {
+        speech_connector::QWEN_ID => {
+            speech_connector::QwenConnector::new(Default::default(), None).describe()
+        }
+        "fixture-tone" => speech_connector::FixtureProvider.describe(),
+        _ => return None,
+    };
+    Some(
+        json!({ "controls": descriptor.narration_controls, "guidance": descriptor.narration_guidance }),
+    )
+}
+fn narration_read_result(result: crate::error::Result<narration::Document>) -> Value {
+    let Ok(doc) = result else {
+        return narration_result(result);
+    };
+    let mut providers = std::collections::BTreeMap::new();
+    for id in std::iter::once(doc.manifest.speech_provider_id.as_str()).chain(
+        doc.manifest
+            .slides
+            .values()
+            .filter_map(|s| s.speech_provider_id_override.as_deref()),
+    ) {
+        providers.entry(id).or_insert_with(|| provider_guidance(id));
+    }
+    let guidance = json!({ "narrationSkill": include_str!("../skills/slopslide-narration/SKILL.md"), "providers": providers });
+    let mut result = narration_result(Ok(doc));
+    result["content"]
+        .as_array_mut()
+        .expect("content")
+        .push(json!({ "type": "text", "text": guidance.to_string() }));
+    result
 }
 
 fn narration_result(result: crate::error::Result<narration::Document>) -> Value {
@@ -140,6 +183,64 @@ mod tests {
         .unwrap()
     }
 
+    #[test]
+    fn narration_read_supplies_skill_and_model_controls_and_writes_reject_unsupported_markers() {
+        let dir = temp_deck("<html></html>");
+        let read = call(&dir, "tools/call", json!({"name": READ_NARRATION}));
+        let doc: Value =
+            serde_json::from_str(read["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        let guide: Value =
+            serde_json::from_str(read["result"]["content"][1]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            guide["providers"]["qwen-local"]["controls"]["supportsTone"],
+            false
+        );
+        assert_eq!(
+            guide["providers"]["qwen-local"]["controls"]["maxPauseMs"],
+            60000
+        );
+        assert!(guide["narrationSkill"]
+            .as_str()
+            .unwrap()
+            .contains("write_narration"));
+        let mut manifest: narration::Manifest =
+            serde_json::from_value(doc["manifest"].clone()).unwrap();
+        manifest.slides.insert(
+            "intro".into(),
+            narration::SlideNarration {
+                text: "First. [pause:800ms] Second.".into(),
+                ..Default::default()
+            },
+        );
+        let saved = call(
+            &dir,
+            "tools/call",
+            json!({"name":WRITE_NARRATION,"arguments":{"manifest":manifest,"base":"missing"}}),
+        );
+        assert_eq!(saved["result"]["isError"], false);
+        let bytes = std::fs::read(dir.join(narration::FILE)).unwrap();
+        let doc = narration::load(&dir).unwrap();
+        for text in [
+            "Hello [tone:confident]",
+            "Hello [pause:800ms",
+            "<break time=\"1s\"/> Hello",
+            "[pause:800ms]",
+        ] {
+            manifest.slides.get_mut("intro").unwrap().text = text.into();
+            let rejected = call(
+                &dir,
+                "tools/call",
+                json!({"name":WRITE_NARRATION,"arguments":{"manifest":manifest,"base":doc.version}}),
+            );
+            assert_eq!(rejected["result"]["isError"], true, "{text}");
+            assert_eq!(std::fs::read(dir.join(narration::FILE)).unwrap(), bytes);
+        }
+        // The editor can retain incomplete drafts without making the file unreadable.
+        manifest.slides.get_mut("intro").unwrap().text = "Draft [pause:".into();
+        narration::save(&dir, manifest, &doc.version).unwrap();
+        assert!(narration::load(&dir).is_ok());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn initializes_with_the_clients_protocol_version() {
         let dir = Path::new("/nonexistent");

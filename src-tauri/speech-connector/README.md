@@ -15,7 +15,7 @@ cargo run --manifest-path src-tauri/Cargo.toml -p speech-connector --bin speech-
 cargo run --manifest-path src-tauri/Cargo.toml -p speech-connector --bin speech-connector -- synthesize ROOT HELPER REQUEST.json NEW_SPOOL
 ```
 
-`ROOT` is the private speech-storage directory; `HELPER` is the absolute path to `src-tauri/speech-runtime/slopslide-speech`. `NEW_SPOOL` must not exist; successful output is JSON containing artifact paths, rates and sample counts. Progress goes to stderr. A JSON array of requests reuses the same resident connector. The library also exposes cancellable setup/import/removal; the small CLI does not yet expose those setup commands.
+`ROOT` is the private speech-storage directory; `HELPER` is the absolute path to `src-tauri/speech-runtime/slopslide-speech`. `NEW_SPOOL` must not exist; successful output is JSON containing artifact paths, rates and sample counts. Progress goes to stderr. A JSON array of requests reuses the same resident connector. The CLI uses `narration::render`, which also supports explicit pause markers. Library consumers should use that entry point for narration; raw `SpeechProvider::synthesize` accepts plain spoken text and rejects control markers. The library also exposes cancellable setup/import/removal; the small CLI does not yet expose those setup commands.
 
 Example request:
 
@@ -38,6 +38,20 @@ cargo run --manifest-path src-tauri/Cargo.toml -p speech-connector --example smo
 ```
 
 This checks English/German/1.1× output hashes against retained Phase 2 evidence, warm reuse and cancellation after actual inference followed by successful restart. It does not download models or modify a deck. The repository's `./check.sh` includes both workspace packages and their normal tests; it does not run this heavy smoke.
+
+## Narration controls
+
+Example annotated request:
+
+```json
+{"text":"First thought. [pause:800ms] Second thought.","language":"en","voiceId":"preset:ryan","pace":1.1}
+```
+
+`Descriptor.narrationControls` and `narrationGuidance` describe the implemented controls and model-specific limits. The reusable `narration::render(provider, request, spool, cancellation, progress)` compiles scripts into spoken passages and exact PCM silence. Supported marker syntax is `[pause:Nms]`, integer N from 1 to 60000, at most 100 markers and ten minutes of total inserted silence per request. The final recording including speech must remain within ten minutes. A pause is additional silence after pace processing; generated speech may include natural pauses. Adjacent markers add their durations; leading/trailing pauses are supported. Empty scripts belong to the host's silent-slide timeline, not speech synthesis.
+
+Unknown alphabetic bracket annotations, incomplete markers and SSML/XML-style tags fail before model invocation. Numeric bracket citations remain literal text. There is no tone/emotion, pronunciation markup, or inline speed/voice control. Qwen 0.6B does not support instruction-driven tone; see its [bundled guidance](guidance/qwen-0.6b.md). The renderer also works with the no-model fixture, and validates/normalizes each passage artifact before concatenating it. Marker-free requests use the unchanged synthesis path.
+
+The SlopSlide narration skill is [bundled in the host](../skills/slopslide-narration/SKILL.md), supplied by `read_narration` together with selected-provider guidance. Other applications can use the renderer/capability data without that skill or any Tauri dependency.
 
 ## Current boundary and limits
 

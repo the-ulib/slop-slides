@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn() }));
+import { useSpeech } from "../speechStore";
+import { testSpeechProvider } from "../test/speech";
 import { api } from "../lib/api";
 import { useApp } from "../store";
 import { useNarration } from "../narrationStore";
@@ -12,6 +14,9 @@ import { NarrationPanel } from "./NarrationPanel";
 beforeEach(() => {
   vi.spyOn(api, "speechHistory").mockResolvedValue([]);
   vi.useFakeTimers();
+  useSpeech.setState({ status: { providers: [testSpeechProvider()], job: null }, job: null, error: null, message: null, preview: null, takes: {} });
+  vi.spyOn(useSpeech.getState(), "initialize").mockResolvedValue();
+  vi.spyOn(useSpeech.getState(), "loadTakes").mockResolvedValue();
   useApp.setState({ deck: deckFor(DECK_HTML), selected: "intro", running: false });
   useNarration.setState({ deckId: "talk", document: emptyNarration(), edits: {}, languageEdit: null, error: null, conflict: null, saving: false });
 });
@@ -85,4 +90,27 @@ describe("NarrationPanel", () => {
     expect((screen.getByText("Draft narration") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("alert").textContent).toContain("Cannot read");
   });
+});
+it("inserts a pause at the cursor and estimates spoken words plus silence", () => {
+  const document = emptyNarration();
+  document.manifest.slides.intro = { ...emptyScript(), text: "First. Second." };
+  useNarration.setState({ document });
+  render(<NarrationPanel />);
+  const input = screen.getByLabelText("Narration script") as HTMLTextAreaElement;
+  input.setSelectionRange(6, 6);
+  fireEvent.click(screen.getByText("Insert pause"));
+  expect(input.value).toBe("First. [pause:800ms] Second.");
+  expect(screen.getByText("0.8s of explicit pauses")).toBeTruthy();
+  expect(screen.getByText(/2 words/)).toBeTruthy();
+  expect(useNarration.getState().edits.intro?.text).toBe(input.value);
+});
+it("keeps an unsupported tone marker editable but blocks speech until corrected", () => {
+  render(<NarrationPanel />);
+  fireEvent.change(screen.getByLabelText("Narration script"), { target: { value: "Hello [tone:confident] world." } });
+  expect(screen.getByRole("alert").textContent).toContain("Unsupported narration marker");
+  expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(true);
+  expect(useNarration.getState().edits.intro?.text).toBe("Hello [tone:confident] world.");
+  fireEvent.change(screen.getByLabelText("Narration script"), { target: { value: "Hello [pause:800ms] world." } });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(false);
 });

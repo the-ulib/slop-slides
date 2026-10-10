@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useNarration } from "../narrationStore";
 import { useSpeech } from "../speechStore";
 import { emptyScript, slideSpeechSettings, type SlideNarration, type NarrationManifest } from "../lib/narration";
+import { narrationMarkers } from "../lib/narrationMarkers";
 import { currentTake, matchesTake } from "../lib/speech";
 import { RecordingHistory } from "./RecordingHistory";
 import type { Deck } from "../lib/api";
@@ -27,7 +28,7 @@ export function SpeechControls({ deck, selected, manifest, editable, children }:
   const overridden = script.speechProviderIdOverride != null || script.presenterIdOverride != null || script.paceOverride != null;
   const current = take && manifest && currentTake(take, script, manifest, providers);
   const busy = !!speech.job;
-  const canGenerate = !!manifest && !narration.error && slideProvider?.available && slideProvider.ready && slideProvider.voices.some((v) => v.id === resolved.presenterId) && slideProvider.languages.includes(script.languageOverride ?? manifest.defaultLanguage) && resolved.pace >= slideProvider.pace.min && resolved.pace <= slideProvider.pace.max;
+  const canGenerate = !narrationMarkers(script.text, slideProvider?.narrationControls).error && !!manifest && !narration.error && slideProvider?.available && slideProvider.ready && slideProvider.voices.some((v) => v.id === resolved.presenterId) && slideProvider.languages.includes(script.languageOverride ?? manifest.defaultLanguage) && resolved.pace >= slideProvider.pace.min && resolved.pace <= slideProvider.pace.max;
   const presenter = (deckDefaults: boolean) => {
     const p = deckDefaults ? provider : slideProvider;
     const id = deckDefaults ? settings.presenterId : resolved.presenterId;
@@ -55,7 +56,7 @@ export function SpeechControls({ deck, selected, manifest, editable, children }:
       <button className={`${field} mt-3`} disabled={busy} onClick={() => void speech.install(slideProvider.id)}>Download voice pack</button>
       {slideProvider.setup.importTitle && <button className="mt-2 underline disabled:opacity-40" disabled={busy} onClick={() => void open({ directory: true, multiple: false, title: slideProvider.setup!.importTitle! }).then((path) => { if (typeof path === "string") void speech.install(slideProvider.id, path); }).catch((e: unknown) => useSpeech.setState({ error: String(e) }))}>Import existing voice pack…</button>}
     </div> : null}
-    {slideProvider?.available && !canGenerate && manifest && script.text.trim() && slideProvider.ready && <p className="mt-2 text-amber-600">Choose a supported presenter, language and pace in Voice & timing.</p>}
+    {slideProvider?.available && !narrationMarkers(script.text, slideProvider.narrationControls).error && !canGenerate && manifest && script.text.trim() && slideProvider.ready && <p className="mt-2 text-amber-600">Choose a supported presenter, language and pace in Voice & timing.</p>}
     <details className="mt-3 text-muted-foreground">
       <summary className="cursor-pointer">Voice & timing</summary>
       <div className="mt-3 space-y-3">

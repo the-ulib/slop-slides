@@ -332,24 +332,24 @@ impl SpeechManager {
                     let event_app = app.clone();
                     let event_id = id.clone();
                     let current = index as u64;
-                    let artifact = provider
-                        .synthesize(
-                            source.request(),
-                            &jobs,
-                            cancel.clone(),
-                            Arc::new(move |stage, _, _, detail| {
-                                manager.report(
-                                    &event_app,
-                                    &event_id,
-                                    stage,
-                                    current,
-                                    total,
-                                    &format!("Slide {} of {total} · {detail}", current + 1),
-                                    None,
-                                );
-                            }),
-                        )
-                        .await?;
+                    let artifact = speech_connector::narration::render(
+                        provider.as_ref(),
+                        source.request(),
+                        &jobs,
+                        cancel.clone(),
+                        Arc::new(move |stage, _, _, detail| {
+                            manager.report(
+                                &event_app,
+                                &event_id,
+                                stage,
+                                current,
+                                total,
+                                &format!("Slide {} of {total} · {detail}", current + 1),
+                                None,
+                            );
+                        }),
+                    )
+                    .await?;
                     let take = import_artifact(
                         &dir,
                         source.clone(),

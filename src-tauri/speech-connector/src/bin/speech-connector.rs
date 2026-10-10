@@ -27,7 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let requests:Vec<SynthesisRequest>=if bytes.starts_with(b"["){serde_json::from_slice(&bytes)?}else{vec![serde_json::from_slice(&bytes)?]};
         let mut outputs=Vec::new();
         for request in requests {
-            let artifact=provider.synthesize(request,&spool,Cancellation::default(),Arc::new(|_,_,_,detail|eprintln!("{detail}"))).await?;
+            let artifact=speech_connector::narration::render(provider.as_ref(),request,&spool,Cancellation::default(),Arc::new(|_,_,_,detail|eprintln!("{detail}"))).await?;
             outputs.push(serde_json::json!({"path":artifact.path,"sampleRate":artifact.sample_rate,"samples":artifact.samples}));
         }
         println!("{}",serde_json::to_string(&outputs)?); Ok(())

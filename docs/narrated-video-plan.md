@@ -71,6 +71,10 @@ The selected slide now shows its script, **Draft narration**, presenter, generat
 
 **Recording history** lists that slide’s takes with date, presenter, pace, duration and original script. **Listen to this recording** previews without changing the video selection. **Use this recording**, or **Use recording & script** when the words differ, explicitly restores its source and accepts it for preview/export. **Generate another take** bypasses cached audio and preserves earlier takes. Local deterministic synthesis can sound identical for unchanged inputs; no sampling/quality defaults changed. See the [implementation handoff and actual native screenshots](implementation/narration-recording-history.md). This live layout supersedes the earlier mockup’s crowded narration controls.
 
+### Explicit pauses and narration skill — 10 October follow-up
+
+Narration supports `[pause:800ms]`, inserted at the cursor with **Insert pause** and editable as milliseconds in the script. The estimate counts spoken words and includes explicit pause time. The reusable connector compiles speech passages and adds exact silence after speaking-pace processing. Existing marker-free narration and cache keys are unchanged. Unsupported tone/stage-direction/SSML markers block generation; the editor retains editable drafts. A bundled narration skill and model-specific guidance accompany `read_narration`; agent writes validate changed scripts. Qwen 0.6B instruction-driven tone remains unsupported. See the [implementation notes and native evidence](implementation/narration-pauses.md).
+
 ### Phase 3 implementation and handoff
 
 Narration now offers **Preview narrated deck**, with play/pause/seek and synchronized frozen slide images. **Export → Narrated MP4** produces static 1080p/30 fps H.264/AAC video through the bundled macOS helper, with progress and cancellation. Slides with scripts need current accepted speech; slides without narration use an editable 5-second silent duration by default. Export uses the provider-independent accepted recordings; Qwen is not part of the video renderer.

@@ -61,7 +61,7 @@ impl SpeechProvider for QwenConnector {
             ("ono_anna", "Ono Anna"),
             ("sohee", "Sohee"),
         ];
-        Descriptor{id:QWEN_ID.into(),label:"Local Qwen".into(),contract_version:1,processing:"local".into(),engine_version:QWEN_ENGINE.into(),model_revision:models::pack().revision, ready:models::installed(&self.0.root),available:self.0.helper.is_some(),unavailable_reason:self.0.helper.is_none().then(||"The bundled local speech helper is unavailable in this build.".into()),voices:names.into_iter().map(|(id,name)|Voice{id:format!("preset:{id}"),name:name.into()}).collect(),languages:vec!["en".into(),"de".into()],pace:Pace{min:0.9,max:1.25,default:1.1,choices:vec![0.9,1.0,1.1,1.2]},supports_cloning:false,setup:Some(Setup{total_bytes:models::total_bytes(),detail:"Runs offline after setup with no service fees. Generation used about 3 GB of memory on the tested Mac.".into(),import_title:Some("Choose the pinned Qwen 0.6B CustomVoice pack".into())}),voice_hint:Some("Ryan and Aiden are English voices. Preview pronunciation in each intended language. Saved personal voices come later.".into())}
+        Descriptor{id:QWEN_ID.into(),label:"Local Qwen".into(),contract_version:1,processing:"local".into(),engine_version:QWEN_ENGINE.into(),model_revision:models::pack().revision, ready:models::installed(&self.0.root),available:self.0.helper.is_some(),unavailable_reason:self.0.helper.is_none().then(||"The bundled local speech helper is unavailable in this build.".into()),voices:names.into_iter().map(|(id,name)|Voice{id:format!("preset:{id}"),name:name.into()}).collect(),languages:vec!["en".into(),"de".into()],pace:Pace{min:0.9,max:1.25,default:1.1,choices:vec![0.9,1.0,1.1,1.2]},supports_cloning:false,narration_controls:crate::narration::Controls::default(),narration_guidance:include_str!("../guidance/qwen-0.6b.md").into(),setup:Some(Setup{total_bytes:models::total_bytes(),detail:"Runs offline after setup with no service fees. Generation used about 3 GB of memory on the tested Mac.".into(),import_title:Some("Choose the pinned Qwen 0.6B CustomVoice pack".into())}),voice_hint:Some("Ryan and Aiden are English voices. Preview pronunciation in each intended language. Saved personal voices come later.".into())}
     }
     fn synthesize<'a>(
         &'a self,
@@ -71,7 +71,7 @@ impl SpeechProvider for QwenConnector {
         progress: Progress,
     ) -> Task<'a, Artifact> {
         Box::pin(async move {
-            self.describe().validate(&request)?;
+            self.describe().validate_plain(&request)?;
             cancel.check()?;
             self.0.epoch.fetch_add(1, Ordering::Relaxed);
             let mut worker = self.0.worker.lock().await;

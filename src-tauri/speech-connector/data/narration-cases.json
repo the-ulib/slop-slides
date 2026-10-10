@@ -1,0 +1,100 @@
+[
+  {
+    "text": "Hello world.",
+    "pauses": []
+  },
+  {
+    "text": "Grüße. [pause:800ms] Weiter geht es!",
+    "pauses": [
+      800
+    ]
+  },
+  {
+    "text": "[pause:1ms] Start [pause:60000ms]",
+    "pauses": [
+      1,
+      60000
+    ]
+  },
+  {
+    "text": "One[pause:500ms][pause:700ms]Two",
+    "pauses": [
+      500,
+      700
+    ]
+  },
+  {
+    "text": "Source [1]. [pause:800ms] Evidence [2].",
+    "pauses": [
+      800
+    ]
+  },
+  {
+    "text": "X [pause:0ms] Y",
+    "error": true
+  },
+  {
+    "text": "X [pause:60001ms] Y",
+    "error": true
+  },
+  {
+    "text": "X [pause:0.8s] Y",
+    "error": true
+  },
+  {
+    "text": "X [pause:1.5ms] Y",
+    "error": true
+  },
+  {
+    "text": "X [pause:-1ms] Y",
+    "error": true
+  },
+  {
+    "text": "X [pause:999999999999999ms] Y",
+    "error": true
+  },
+  {
+    "text": "X [pause:800ms",
+    "error": true
+  },
+  {
+    "text": "X [Pause:800ms] Y",
+    "error": true
+  },
+  {
+    "text": "X [tone:confident] Y",
+    "error": true
+  },
+  {
+    "text": "X [happy] Y",
+    "error": true
+  },
+  {
+    "text": "X [whisper] Y",
+    "error": true
+  },
+  {
+    "text": "X <break time=\"800ms\"/> Y",
+    "error": true
+  },
+  {
+    "text": "<prosody rate=\"slow\">X</prosody>",
+    "error": true
+  },
+  {
+    "text": "X [ pause:800ms] Y",
+    "error": true
+  },
+  {
+    "text": "X [愤怒] Y",
+    "error": true
+  },
+  {
+    "text": "X <phoneme alphabet=\"ipa\">Y</phoneme>",
+    "error": true
+  },
+  {
+    "text": "X <say-as interpret-as=\"date\">Y</say-as>",
+    "error": true
+  }
+]

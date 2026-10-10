@@ -19,3 +19,12 @@ it("recorded overrides keep audio current when defaults change, while resetting 
   expect(matchesTake(take, { ...script, paceOverride: null }, manifest)).toBe(false);
   expect(matchesTake(take, { ...script, text: "Changed words" }, manifest)).toBe(false);
 });
+it("invalidates literal pre-marker audio but keeps old plain recordings current", () => {
+  const text = "Hello [pause:800ms] world.";
+  const script = { ...emptyScript(), text };
+  const marked = { ...take, source: { ...take.source, text } };
+  const manifest = emptyNarration().manifest;
+  expect(matchesTake(marked, script, manifest)).toBe(false);
+  expect(matchesTake({ ...marked, source: { ...marked.source, narrationFormatVersion: 1 } }, script, manifest)).toBe(true);
+  expect(matchesTake(take, { ...script, text: "Hello" }, manifest)).toBe(true);
+});

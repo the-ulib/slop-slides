@@ -21,6 +21,11 @@ pub struct Source {
     pub language: narration::Language,
     pub presenter_id: String,
     pub pace: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub narration_format_version: u32,
+}
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 impl Source {
     pub fn from_manifest(manifest: &narration::Manifest, slide: &str) -> Result<Self> {
@@ -32,7 +37,13 @@ impl Source {
         if text.is_empty() {
             return Err(Error::msg("Write a narration script first."));
         }
+        let plan = speech_connector::narration::parse(&text)?;
         let source = Self {
+            narration_format_version: if plan.marked {
+                speech_connector::narration::FORMAT_VERSION
+            } else {
+                0
+            },
             provider_id: script
                 .speech_provider_id_override
                 .as_ref()
@@ -72,7 +83,10 @@ impl Source {
     pub fn key_for(&self, engine: &str, revision: &str) -> String {
         // Preserve the exact legacy Qwen hash (field order included). Provider
         // binding is implicit only for that pinned legacy engine/normalization.
-        let identity = if self.provider_id == speech_connector::QWEN_ID && engine == ENGINE {
+        let identity = if self.provider_id == speech_connector::QWEN_ID
+            && engine == ENGINE
+            && self.narration_format_version == 0
+        {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
             struct Legacy<'a> {
@@ -511,11 +525,51 @@ mod tests {
     fn source() -> Source {
         Source {
             provider_id: narration::default_provider(),
+            narration_format_version: 0,
             text: "Hello".into(),
             language: narration::Language::En,
             presenter_id: "preset:ryan".into(),
             pace: 1.1,
         }
+    }
+    #[test]
+    fn pause_format_keys_do_not_reuse_pre_marker_recordings_and_legacy_keys_stay_stable() {
+        let mut manifest = narration::Manifest::default();
+        manifest.slides.insert(
+            "intro".into(),
+            narration::SlideNarration {
+                text: "Hello [pause:800ms] world".into(),
+                ..Default::default()
+            },
+        );
+        let modern = Source::from_manifest(&manifest, "intro").unwrap();
+        let old = Source {
+            narration_format_version: 0,
+            ..modern.clone()
+        };
+        assert_eq!(modern.narration_format_version, 1);
+        assert_ne!(modern.key(), old.key());
+        let dir = dir();
+        let old_take = publish(&dir, old, &[1, 2, 3]).unwrap();
+        assert_eq!(
+            read(&dir, &old_take.id)
+                .unwrap()
+                .unwrap()
+                .source
+                .narration_format_version,
+            0
+        );
+        assert!(find(&dir, &modern.key()).unwrap().is_none());
+        let new_take = publish(&dir, modern, &[4, 5, 6]).unwrap();
+        assert_eq!(
+            read(&dir, &new_take.id)
+                .unwrap()
+                .unwrap()
+                .source
+                .narration_format_version,
+            1
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn history_keeps_variants_isolated_and_restores_source_with_a_fingerprint() {

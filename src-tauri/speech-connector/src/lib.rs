@@ -1,6 +1,7 @@
 //! Speech data and lifecycle only: no Tauri, slides, manifests or deck paths.
 pub mod audio;
 pub mod models;
+pub mod narration;
 mod qwen;
 mod segments;
 mod worker;
@@ -110,6 +111,10 @@ pub struct Descriptor {
     pub supports_cloning: bool,
     pub setup: Option<Setup>,
     pub voice_hint: Option<String>,
+    #[serde(default)]
+    pub narration_controls: narration::Controls,
+    #[serde(default)]
+    pub narration_guidance: String,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,8 +151,24 @@ impl Descriptor {
                 "Speaking pace is outside this provider's supported range.",
             ));
         }
+        let plan = narration::parse(&r.text)?;
+        if plan.marked && (self.narration_controls.format_version != narration::FORMAT_VERSION
+            || plan.parts.iter().filter(|p| matches!(p, narration::Part::Pause(_))).count() > self.narration_controls.max_markers
+            || plan.parts.iter().any(|p| matches!(p, narration::Part::Pause(ms) if *ms > self.narration_controls.max_pause_ms))) {
+            return Err(Error::msg("Pause markers exceed this connector's supported controls."));
+        }
+        if !plan.has_speech() {
+            return Err(Error::msg("Write spoken text as well as pause markers."));
+        }
         if r.text.trim().is_empty() || r.text.len() > 100_000 {
             return Err(Error::msg("Speech requires nonempty text below 100 KB."));
+        }
+        Ok(())
+    }
+    pub fn validate_plain(&self, r: &SynthesisRequest) -> Result<()> {
+        self.validate(r)?;
+        if narration::parse(&r.text)?.marked {
+            return Err(Error::msg("Use narration::render to synthesize pause markers; raw synthesis accepts spoken text only."));
         }
         Ok(())
     }
@@ -212,6 +233,8 @@ impl SpeechProvider for FixtureProvider {
             },
             supports_cloning: false,
             setup: None,
+            narration_controls: narration::Controls::default(),
+            narration_guidance: "Development fixture: audio is a tone, not real speech. Explicit pauses use the shared renderer; tonal instructions are unsupported.".into(),
             voice_hint: Some(
                 "Development fixture: generates a test tone to verify provider interchange.".into(),
             ),
@@ -225,7 +248,7 @@ impl SpeechProvider for FixtureProvider {
         progress: Progress,
     ) -> Task<'a, Artifact> {
         Box::pin(async move {
-            self.describe().validate(&request)?;
+            self.describe().validate_plain(&request)?;
             cancel.check()?;
             let rate = 16000;
             let samples = (rate as f64 / request.pace).round() as usize;

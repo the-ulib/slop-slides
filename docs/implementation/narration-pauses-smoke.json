@@ -1,0 +1,29 @@
+{
+  "source": {
+    "providerId": "qwen-local",
+    "text": "First thought. [pause:800ms] Second thought.",
+    "language": "en",
+    "presenterId": "preset:ryan",
+    "pace": 1.1,
+    "narrationFormatVersion": 1
+  },
+  "durationSeconds": 4.357916666666667,
+  "sampleRate": 24000,
+  "samples": 104590,
+  "silenceRunsAtLeast100ms": [
+    {
+      "startSeconds": 1.553,
+      "durationSeconds": 0.8457083333333333
+    }
+  ],
+  "sha256": "d3a1c9e491214e1cd58eb33788b54ad78357041d1517f411fd9a525b004df07a",
+  "nativeInsertionGenerationPlayback": true,
+  "originalTakePreserved": true,
+  "originalTakeRestored": true,
+  "originalTakeSha256": "65307647ce33bcd9bce3fb56443a9fcf089e0fd9e8e3392612b6498fbd6b9542",
+  "otherSlideAcceptedTakePreserved": true,
+  "nativeDeckPreviewPrepared": true,
+  "previewSlides": 6,
+  "previewDurationSeconds": 58.4,
+  "mp4ExportRetested": false
+}

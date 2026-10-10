@@ -115,3 +115,7 @@ Planned test cases:
 Remaining qualification is unchanged: clean-machine downloads, baseline hardware, broader voices/long scripts, integrated sandbox/signing, licensing and full-product Store review. Provider interchange adds architecture flexibility, not new evidence that these checks passed.
 
 The implemented v1 interface uses cancellable Rust tasks and completed PCM16 WAV artifacts; SlopSlide supplies job IDs. The polling/voice-profile/cloud-error/MCP-resource portions above are subsequent milestones. Current host normalization supports downmixing and upsampling from ≤24 kHz; unsupported formats fail explicitly until a cloud adapter qualifies its decoder/resampler.
+
+## Explicit narration controls — 10 October implementation follow-up
+
+The reusable connector now exposes `narrationControls`/`narrationGuidance` and `narration::render` for portable `[pause:Nms]` compilation into speech passages and PCM silence. The CLI and SlopSlide call this renderer; raw adapter synthesis rejects markers. This preserves a small frontend and keeps pause timing out of Qwen model code. No tone instruction capability is advertised for the current 0.6B model. Host `read_narration` supplies the bundled skill plus resolved provider guidance; changed agent scripts are checked before atomic writes. Plain-script audio/cache compatibility is retained; marked source metadata uses narration format version 1 so recordings that previously spoke literal tags cannot be reused as timed narration. See the [pause implementation handoff](implementation/narration-pauses.md).

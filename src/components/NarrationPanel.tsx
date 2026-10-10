@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useApp } from "../store";
 import { useVideo } from "../videoStore";
 import { useNarration } from "../narrationStore";
+import { useSpeech } from "../speechStore";
+import { insertPause, narrationMarkers } from "../lib/narrationMarkers";
 import { SpeechControls } from "./SpeechControls";
-import { editedManifest, DEFAULT_SILENT_DURATION_MS, emptyScript, slideReviewHash, type NarrationLanguage } from "../lib/narration";
+import { editedManifest, DEFAULT_SILENT_DURATION_MS, emptyScript, slideReviewHash, slideSpeechSettings, type NarrationLanguage } from "../lib/narration";
 
 const field = "w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-50";
 export function NarrationPanel() {
@@ -12,6 +14,8 @@ export function NarrationPanel() {
   const selected = useApp((s) => s.selected);
   const running = useApp((s) => s.running);
   const state = useNarration();
+  const speech = useSpeech();
+  const scriptInput = useRef<HTMLTextAreaElement>(null);
   const [scope, setScope] = useState<"slide" | "deck">("slide");
   const [audience, setAudience] = useState("");
   const [minutes, setMinutes] = useState("");
@@ -22,7 +26,9 @@ export function NarrationPanel() {
   const script = (selected && manifest?.slides[selected]) || emptyScript();
   const hash = selected ? slideReviewHash(deck, selected) : null;
   const editable = !!manifest && !!slide && !slide.id.startsWith("#");
-  const words = script.text.trim().split(/\s+/).filter(Boolean).length;
+  const provider = speech.status?.providers.find((p) => p.id === (manifest ? slideSpeechSettings(manifest, script).speechProviderId : "qwen-local"));
+  const markers = narrationMarkers(script.text, provider?.narrationControls);
+  const words = markers.words;
   const needsReview = !!words && script.reviewedSlideHash !== hash;
   const orphans = manifest ? Object.entries(manifest.slides).filter(([id]) => !deck.slides.some((s) => s.id === id)) : [];
   const edit = (patch: Parameters<typeof state.edit>[1]) => { if (selected) state.edit(selected, patch); };
@@ -58,10 +64,21 @@ export function NarrationPanel() {
         <button className="mb-2 text-primary underline disabled:opacity-40" disabled={!manifest || !!state.error || !!state.conflict || running || (scope === "slide" ? !editable : !deck.slides.some((s) => !s.hidden && !s.id.startsWith("#")))} onClick={() => void useApp.getState().draftNarration(scope, audience, minutes)}>{scope === "deck" ? "Draft whole deck" : "Draft narration"}</button>
         {running && <p className="mb-2 text-muted-foreground">The agent is working. Follow progress in Chat.</p>}
         <label className="block">Narration script
-          <textarea aria-label="Narration script" className={`${field} mt-1 min-h-36 resize-y leading-relaxed`} disabled={!editable} value={script.text} placeholder="Explain this slide in your own words, or ask the agent to draft it…" maxLength={100000} onChange={(e) => edit({ text: e.target.value, reviewedSlideHash: hash })} />
+          <textarea ref={scriptInput} aria-label="Narration script" className={`${field} mt-1 min-h-36 resize-y leading-relaxed`} disabled={!editable} value={script.text} placeholder="Explain this slide in your own words, or ask the agent to draft it…" maxLength={100000} onChange={(e) => edit({ text: e.target.value, reviewedSlideHash: hash })} />
         </label>
+        <div className="mt-2 flex items-center gap-2">
+          <button className="text-primary underline disabled:opacity-40" title="Insert 0.8 seconds of silence at the cursor; edit the milliseconds in the marker to adjust it." disabled={!editable || provider?.narrationControls?.formatVersion !== 1 || markers.pauses.length >= (provider.narrationControls?.maxMarkers ?? 100)} onMouseDown={(e) => e.preventDefault()} onClick={() => {
+            const input = scriptInput.current;
+            if (!input) return;
+            const next = insertPause(script.text, input.selectionStart, input.selectionEnd);
+            edit({ text: next.text, reviewedSlideHash: hash });
+            requestAnimationFrame(() => { input.focus(); input.setSelectionRange(next.cursor, next.cursor); });
+          }}>Insert pause</button>
+          {markers.pauseMs > 0 && <span className="text-muted-foreground">{(markers.pauseMs / 1000).toFixed(1)}s of explicit pauses</span>}
+        </div>
+        {markers.error && <p role="alert" className="mt-2 text-amber-600">{markers.error} Your draft is kept; correct the marker before generating audio.</p>}
         <div className="mt-2 flex items-center justify-between gap-2 text-muted-foreground">
-          <span>{words} words{words > 0 ? ` · ~${Math.ceil(words / 150 * 60)}s estimated speech` : " · no speech"}</span>
+          <span>{words} words{words > 0 ? ` · ~${Math.ceil(words / 150 * 60 + markers.pauseMs / 1000)}s estimated speech` : " · no speech"}</span>
           <span>{needsReview ? "Review needed" : words ? "Reviewed" : "No script"}</span>
         </div>
         {needsReview && <button className={`${field} mt-2`} onClick={() => edit({ reviewedSlideHash: hash })}>Mark reviewed</button>}
