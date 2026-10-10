@@ -166,7 +166,7 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
       <p className="mt-3 text-muted-foreground">Your recording and voice profile stay on this device. Once saved, the presenter works across decks without recording again.</p>
       {!draft ? <div className="mt-4 space-y-4">
         <label className="block">Presenter name
-          <input aria-label="Presenter name" className={`${field} mt-1`} value={name} placeholder="e.g. Uli" maxLength={80} disabled={inputBusy} onChange={(e) => setName(e.target.value)} />
+          <input aria-label="Presenter name" className={`${field} mt-1`} value={name} maxLength={80} disabled={inputBusy} onChange={(e) => setName(e.target.value)} />
         </label>
         <label className="block">Recording language
           <select aria-label="Recording language" className={`${field} mt-1`} value={language} disabled={inputBusy} onChange={(e) => setLanguage(e.target.value as "en" | "de")}><option value="en">English</option><option value="de">German</option></select>
@@ -177,11 +177,16 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
           <button className={secondary} aria-pressed={source === "record"} disabled={inputBusy} onClick={() => setSource("record")}>Record here</button>
         </div>
         {source === "record" && <section className="rounded-md bg-accent p-3" aria-label="Recording passage">
-          <h3 className="font-medium">Read this passage naturally</h3>
-          <p className="mt-2 leading-relaxed">{passages[language]}</p>
-          <p className="mt-2 text-xs text-muted-foreground">Read it through first. After Start, speak the microphone test phrase for five seconds, then read the passage when prompted. Only the passage is saved. Click Stop after the last word.</p>
-          <p className="mt-2 text-muted-foreground">Microphone test phrase: “{warmups[language]}”</p>
-          {recording && <p role="status" className="mt-3 font-medium">{warmingUp ? `Microphone warm-up · ${Math.max(0, 5 - seconds)}s · speak the test phrase` : "Recording · read the main passage now"}</p>}
+          {recording && <p role="status" className="mb-3 font-semibold">{warmingUp ? `Microphone warm-up · ${Math.max(0, 5 - seconds)}s · speak the test phrase` : "Recording · read the main passage now"}</p>}
+          <section aria-label="Microphone warm-up instructions" className="rounded-md border border-primary/50 bg-primary/10 p-3">
+            <h3 className="font-semibold">1 · Warm up the microphone</h3>
+            <p className="mt-2">After clicking Start, say this test phrase during the five-second warm-up:</p>
+            <p className="mt-2 text-base font-semibold leading-relaxed">“{warmups[language]}”</p>
+            <p className="mt-2">Wait for the recording cue before reading the passage below. The warm-up is not saved.</p>
+          </section>
+          <h3 className="mt-4 font-medium">2 · Read this passage naturally</h3>
+          <p aria-label="Main reading passage" className="mt-2 leading-relaxed">{passages[language]}</p>
+          <p className="mt-2 text-muted-foreground">Read it through before starting. Use your usual presentation voice and click Stop after the last word.</p>
           <button className={`${primary} mt-3`} disabled={busy || requestingMic} onClick={() => { if (recording && warmingUp) { capture.current?.cancel(); capture.current = null; setRecording(false); setWarmingUp(false); } else if (recording) void stopRecording(); else void record(); }}>{recording ? warmingUp ? "Cancel warm-up" : `Stop recording · ${seconds}s` : requestingMic ? "Requesting microphone…" : "Start recording"}</button>
         </section>}
         {reference && <>
@@ -205,7 +210,7 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
         </>}
       </div> : <div className="mt-4 space-y-4">
         <label className="block">Presenter name
-          <input aria-label="Presenter name" className={`${field} mt-1`} value={name} placeholder="e.g. Uli" maxLength={80} disabled={busy || saving} onChange={(e) => setName(e.target.value)} />
+          <input aria-label="Presenter name" className={`${field} mt-1`} value={name} maxLength={80} disabled={busy || saving} onChange={(e) => setName(e.target.value)} />
         </label>
         <p className="text-muted-foreground">Listen for likeness, pronunciation and pacing. If you are unhappy with the voice, record again. A cross-language accent may remain.</p>
         <label className="block">Preview language

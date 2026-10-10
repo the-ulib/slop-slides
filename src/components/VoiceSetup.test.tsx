@@ -33,6 +33,22 @@ async function prepare() {
   fireEvent.click(screen.getByRole("checkbox", { name: /I am the speaker/ }));
 }
 describe("voice setup", () => {
+  it("leaves name fields without an example and puts warm-up instructions before the main passage", async () => {
+    render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={vi.fn()} />);
+    const name = screen.getByLabelText("Presenter name") as HTMLInputElement;
+    expect(name.value).toBe(""); expect(name.getAttribute("placeholder")).toBeNull();
+    fireEvent.click(screen.getByText("Record here"));
+    const warmup = screen.getByLabelText("Microphone warm-up instructions");
+    const passage = screen.getByLabelText("Main reading passage");
+    expect(warmup.textContent).toContain("Ein kurzer Mikrofontest: eins, zwei, drei.");
+    expect(warmup.textContent).toContain("Wait for the recording cue");
+    expect(warmup.textContent).toContain("The warm-up is not saved.");
+    expect(warmup.compareDocumentPosition(passage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(passage.textContent).toContain("Am frühen Morgen");
+    expect(startVoiceRecording).not.toHaveBeenCalled();
+    await prepare(); fireEvent.click(screen.getByText("Create voice preview")); await screen.findByLabelText("Voice setup preview");
+    expect(screen.getByLabelText("Presenter name").getAttribute("placeholder")).toBeNull();
+  });
   it("starts with reference import, then keeps the reference when correcting its language", async () => {
     render(<VoiceSetup provider={{ ...provider(), cloneReady: false }} initialLanguage="en" onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Import reference audio…" })).toBeTruthy();
@@ -119,7 +135,7 @@ describe("voice setup", () => {
     vi.mocked(startVoiceRecording).mockRejectedValueOnce(new Error("Permission denied"));
     const { unmount } = render(<VoiceSetup provider={provider()} initialLanguage="en" onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByText("Record here"));
-    expect(screen.getByText("Read this passage naturally")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "2 · Read this passage naturally" })).toBeTruthy();
     expect(startVoiceRecording).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Start recording")); await screen.findByText(/Permission denied.*import a WAV/);
     const cancel = vi.fn(); vi.mocked(startVoiceRecording).mockImplementationOnce(async (_limit, options) => { options?.onReady?.(); return { cancel, stop: vi.fn() }; });
@@ -143,7 +159,7 @@ describe("voice setup", () => {
     fireEvent.click(screen.getByText("Record here"));
     expect(screen.getByLabelText("Recording passage").textContent).toContain("On a bright morning");
     fireEvent.change(screen.getByLabelText("Recording language"), { target: { value: "de" } });
-    const passage = screen.getByLabelText("Recording passage").querySelector("p")!.textContent;
+    const passage = screen.getByLabelText("Main reading passage").textContent;
     expect(passage).toContain("Am frühen Morgen");
     expect(passage!.split(/\s+/).length).toBeLessThanOrEqual(45);
     expect(startVoiceRecording).not.toHaveBeenCalled();
