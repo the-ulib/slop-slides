@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn(), open: vi.fn() }));
 import { useSpeech } from "../speechStore";
 import { testSpeechProvider } from "../test/speech";
 import { api } from "../lib/api";
@@ -22,6 +22,19 @@ beforeEach(() => {
 });
 afterEach(async () => { await useNarration.getState().load(null); vi.useRealTimers(); });
 describe("NarrationPanel", () => {
+  it("puts voice creation before the script and allows it without a selected slide", () => {
+    useSpeech.setState({ status: { providers: [{ ...testSpeechProvider(), supportsCloning: true, cloneReady: true }], job: null, presenters: [] } });
+    render(<NarrationPanel />);
+    const create = screen.getByRole("button", { name: "Create voice from recording…" });
+    expect(create.compareDocumentPosition(screen.getByLabelText("Narration script")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    act(() => useApp.setState({ selected: null }));
+    expect((create as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(create);
+    expect(screen.getByRole("dialog", { name: "Create voice from recording" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Import reference audio…" })).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Close voice setup"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it("starts missing and legacy unset silent slides at 5 seconds and retains custom durations", () => {
     render(<NarrationPanel />);
     expect((screen.getByLabelText("Silent slide duration") as HTMLInputElement).value).toBe("5");

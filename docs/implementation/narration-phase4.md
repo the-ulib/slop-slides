@@ -1,13 +1,13 @@
 # Phase 4: reusable personal presenters
 
-Implemented 10 October 2026, at pragmatic PoC scope. The right-sidebar Narration tab now offers **Add my voice…** next to the Presenter picker. A two-step modal handles one-time setup; **Voice & timing → Manage presenters** holds the less frequent management actions.
+Implemented 10 October 2026, at pragmatic PoC scope. The right-sidebar Narration tab now offers **Create voice from recording…** in a sticky header above the script. A two-step modal handles one-time setup; **Manage presenters** sits directly below the picker, outside Voice & timing.
 
 ## User flow
 
-1. Name the presenter and choose the recording's primary language. Download or import the additional **2.52 GB** local Base pack if needed; this is separate from the stock-voice pack.
-2. Import a clean PCM16 WAV or record a short passage in the app. Recommended length is 10–20 seconds; accepted range is 3–30 seconds. Listen to the reference, enter/check the exact spoken words, and confirm permission to use the voice.
+1. Open **Create voice from recording…**, then **Import reference audio…** or **Record here**. This entry also works when no slide is selected. Recommended length is 10–20 seconds; accepted range is 3–30 seconds, PCM16 WAV. Choose the recording language.
+2. Once the recording is chosen, name the presenter, listen to the reference, enter/check its exact words and confirm permission. Changing language keeps the imported file and transcript. If needed, **Download model & create preview** explains and installs the additional **2.52 GB** local Base model before creation. **Already have the model files? → Import existing model folder…** is separate from reference import.
 3. Create a profile, listen to the generated primary-language preview, and save. An optional English/German preview checks cross-language pronunciation. Save is disabled until the primary preview has played. Cross-language accents can remain.
-4. The saved presenter appears in the usual picker. Saving selects it for the current slide. Optionally make it the default for **new** decks; existing decks retain their choices. No recording or profile extraction is required for later decks or app restarts.
+4. The saved presenter appears in the usual picker. Saving selects it for the current slide if that slide is still selected. No separate import is needed for the saved voice. Optionally make it the default for **new** decks; existing decks retain their choices. No recording or profile extraction is required for later decks or app restarts.
 
 Management supports rename, replacing a reference, setting/clearing the new-deck default, and confirmed deletion. Rename preserves identity and revision. Replacement keeps identity but creates a new revision for future generation. Existing accepted recordings remain playable, selectable in history, and exportable after replacement/deletion; a missing presenter blocks new generation with recovery guidance.
 
@@ -23,7 +23,7 @@ Private data lives in `<app data>/speech/voices/registry.json` and `voices/data/
 
 ## Verification and limits
 
-- `./check.sh`: **907 frontend tests, 350 Rust tests passed** (five existing Rust tests ignored), typecheck/build/format/clippy passed.
+- `./check.sh`: **910 frontend tests, 350 Rust tests passed** (five existing Rust tests ignored), typecheck/build/format/clippy passed.
 - Actual-model standalone smoke created a profile from the existing CC0 German reference, generated German/English previews, saved/reopened it in a fresh connector, preserved revision on rename, and recovered after cancellation with identical output. The user judged both new previews usable. [Public listening evidence and hashes](phase4-listening/results.json); [German preview](phase4-listening/preview-de.wav), [English preview](phase4-listening/preview-en.wav).
 - Stock regression: all three retained English/German/pace WAV hashes match earlier evidence; cancellation after inference and restart passed.
 - Native packaged-app acceptance passed: Base pack import, public-reference import, exact transcript, profile creation, audio playback, listening-gated save, another deck with the new default, rename, clearing the temporary default, full app restart, picker rediscovery and fresh synthesis without importing a reference again. Narrated-deck playback and MP4 export passed: **4.766667 seconds, 143 frames, 1920×1080, H.264/AAC, 24 kHz mono**. [Native evidence](phase4-listening/native-results.json).
@@ -35,9 +35,13 @@ The preview app's library listing initially waited for macOS folder approval. Af
 
 Imported formats are deliberately limited to PCM16 WAV. Transcript entry is manual; there is no transcription download or service. Creation errors/cancellation clean up incomplete profiles, closing the wizard discards its draft and releases its staged input. A forced app termination can leave private drafts/temporary inputs; crash cleanup, AudioWorklet capture, broader voice-quality/deck/device testing and full distribution/privacy review remain hardening tasks. Only public test audio is retained in this repository; no saved personal profiles or model weights are committed.
 
+## Voice creation UX follow-up
+
+The previous Add my voice link was below the script and model-pack import competed with reference import. Keep the modal outside the sticky header: native WebKit acceptance found that nesting it inside clipped the dialog despite its accessibility nodes remaining present. The current header stays visible while scrolling, exposes creation directly and keeps less frequent presenter management in one disclosure. The initial modal shows reference import/recording and language; name/transcript/permission/model setup appear only after choosing audio. Regression tests cover entry order/no selected slide, source-first setup, retaining input on language correction, installing before creation and setup failure without losing the reference. Native macOS follow-up passed: creation is visible above the script; the modal and imported-reference form are visibly rendered; public WAV import reveals the name/transcript fields; completing them and consent enables preview; closing leaves the existing presenter and accepted take intact. This UX follow-up did not create another saved profile or repeat the already-passed model/listening checks.
+
 ## Resume
 
-Run `pnpm app:dev`, open a slide's Narration tab and use **Add my voice…**. For a no-microphone reproduction use `docs/feasibility/listening-2026-10-09/l-german-public-reference.wav` with this exact German transcript:
+Run `pnpm app:dev`, open a slide's Narration tab and use **Create voice from recording…**. For a no-microphone reproduction use `docs/feasibility/listening-2026-10-09/l-german-public-reference.wav` with this exact German transcript:
 
 > Eure Schoko-Bonbons sind sagenhaft lecker! Europa und Asien zusammengenommen wird auch als Eurasien bezeichnet. Euer Plan hat ja toll geklappt.
 

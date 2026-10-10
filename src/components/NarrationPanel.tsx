@@ -52,6 +52,7 @@ export function NarrationPanel() {
             )}
           </div>
         )}
+        <SpeechControls deck={deck} selected={selected} manifest={manifest} editable={editable} scriptEditor={<div className="mt-3">
         <div className="mb-2 flex items-center justify-between">
           <span className="font-medium">{slide ? `Slide ${index + 1} of ${deck.slides.length}` : "Select a slide"}</span>
           <div className="flex gap-1">
@@ -85,7 +86,7 @@ export function NarrationPanel() {
         {!words && <label className="mt-3 block text-muted-foreground">Silent slide duration (seconds)
           <input aria-label="Silent slide duration" type="number" min={0.1} max={600} step={0.5} placeholder="5 seconds by default" className={`${field} mt-1 text-foreground`} disabled={!editable} value={(script.silentDurationMs ?? DEFAULT_SILENT_DURATION_MS) / 1000} onChange={(e) => edit({ silentDurationMs: e.target.value === "" ? null : Math.min(600000, Math.max(100, Math.round(Number(e.target.value) * 1000))) })} />
         </label>}
-        <SpeechControls deck={deck} selected={selected} manifest={manifest} editable={editable}>
+        </div>}>
           <label className="mt-3 block text-muted-foreground">Slide language
             <select aria-label="Slide narration language" className={`${field} mt-1 text-foreground`} disabled={!editable} value={script.languageOverride ?? ""} onChange={(e) => edit({ languageOverride: (e.target.value || null) as NarrationLanguage | null })}>
               <option value="">Use deck language</option><option value="en">English</option><option value="de">German</option>

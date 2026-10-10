@@ -30,7 +30,7 @@ it("uses a saved presenter's readiness independently of the stock pack", () => {
   render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={manifest} editable />);
   expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByText("Download voice pack")).toBeNull();
-  expect(screen.getByText("Add my voice…")).toBeTruthy();
+  expect(screen.getByText("Create voice from recording…")).toBeTruthy();
 });
 it("explains a missing saved presenter while keeping its recording accessible", () => {
   const manifest = { ...doc.manifest, presenterId: "profile:missing" };

@@ -15,6 +15,7 @@ const provider = () => ({ ...testSpeechProvider(), supportsCloning: true, cloneR
 beforeEach(() => {
   useSpeech.setState({ status: { providers: [provider()], job: null, presenters: [] }, job: null, error: null });
   vi.spyOn(useSpeech.getState(), "refresh").mockResolvedValue();
+  vi.spyOn(api, "installCloningPack").mockResolvedValue();
   vi.spyOn(api, "importVoiceRecording").mockResolvedValue({ id: "recording1", path: "/sample.wav" });
   vi.spyOn(api, "createVoiceProfile").mockResolvedValue(profile);
   vi.spyOn(api, "previewVoiceProfile").mockResolvedValue();
@@ -24,15 +25,40 @@ beforeEach(() => {
   vi.mocked(open).mockResolvedValue("/sample.wav");
 });
 async function prepare() {
-  fireEvent.click(screen.getByText("Import recording…"));
+  fireEvent.click(screen.getByText("Import reference audio…"));
   await screen.findByText("Recording ready: sample.wav");
   fireEvent.change(screen.getByLabelText("Voice recording transcript"), { target: { value: "Exact spoken words." } });
   fireEvent.click(screen.getByRole("checkbox", { name: /I am the speaker/ }));
 }
 describe("voice setup", () => {
+  it("starts with reference import, then keeps the reference when correcting its language", async () => {
+    render(<VoiceSetup provider={{ ...provider(), cloneReady: false }} initialLanguage="en" onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Import reference audio…" })).toBeTruthy();
+    expect(screen.queryByLabelText("Presenter name")).toBeNull();
+    expect(screen.queryByText("One-time voice model setup")).toBeNull();
+    await prepare();
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ multiple: false, filters: [{ name: "WAV audio", extensions: ["wav"] }] }));
+    fireEvent.change(screen.getByLabelText("Recording language"), { target: { value: "de" } });
+    expect(screen.getByText("Recording ready: sample.wav")).toBeTruthy();
+    expect((screen.getByLabelText("Voice recording transcript") as HTMLTextAreaElement).value).toBe("Exact spoken words.");
+    expect(screen.getByText(/2.52 GB local voice model/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Download model & create preview"));
+    await screen.findByLabelText("Voice setup preview");
+    expect(api.installCloningPack).toHaveBeenCalledWith(expect.any(String), null, "qwen-local");
+    expect(vi.mocked(api.installCloningPack).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.createVoiceProfile).mock.invocationCallOrder[0]!);
+  });
+  it("keeps the reference and stops creation if model setup fails", async () => {
+    vi.mocked(api.installCloningPack).mockRejectedValue(new Error("Download cancelled"));
+    render(<VoiceSetup provider={{ ...provider(), cloneReady: false }} initialLanguage="de" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await prepare(); fireEvent.click(screen.getByText("Download model & create preview"));
+    await screen.findByText("Download cancelled");
+    expect(api.createVoiceProfile).not.toHaveBeenCalled();
+    expect(screen.getByText("Recording ready: sample.wav")).toBeTruthy();
+    expect((screen.getByText("Download model & create preview") as HTMLButtonElement).disabled).toBe(false);
+  });
   it("requires a reference, transcript and consent, then listening before save/default", async () => {
     const onSaved = vi.fn(); render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={onSaved} />);
-    expect((screen.getByText("Create voice preview") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("Create voice preview")).toBeNull();
     await prepare(); fireEvent.click(screen.getByText("Create voice preview"));
     await screen.findByLabelText("Voice setup preview");
     expect(api.createVoiceProfile).toHaveBeenCalledWith(expect.any(String), "qwen-local", expect.objectContaining({ transcript: "Exact spoken words.", reference: "/sample.wav", language: "de", authorized: true }));

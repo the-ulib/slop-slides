@@ -67,7 +67,7 @@ Provider, presenter and pace now default to **This slide** in Narration; choose 
 
 ### Recording history and simpler narration — 9 October follow-up
 
-The selected slide now shows its script, **Draft narration**, presenter, generation state and **Preview narrated deck**. Language/pace/provider/pauses/deck defaults move into **Voice & timing**; whole-deck generation and drafting preferences use separate closed disclosures. Silent slides still show their effective 5-second duration. Chat stays in the right sidebar and playback stays below the slide.
+The Narration tab starts with a sticky Presenter picker and a prominent **Create voice from recording…** action above the script. **Manage presenters** sits directly below the picker. The selected slide shows its script, **Draft narration**, generation state and **Preview narrated deck**. Language/pace/provider/pauses/deck defaults move into **Voice & timing**; whole-deck generation and drafting preferences use separate closed disclosures. Silent slides still show their effective 5-second duration. Chat stays in the right sidebar and playback stays below the slide.
 
 **Recording history** lists that slide’s takes with date, presenter, pace, duration and original script. **Listen to this recording** previews without changing the video selection. **Use this recording**, or **Use recording & script** when the words differ, explicitly restores its source and accepts it for preview/export. **Generate another take** bypasses cached audio and preserves earlier takes. Local deterministic synthesis can sound identical for unchanged inputs; no sampling/quality defaults changed. See the [implementation handoff and actual native screenshots](implementation/narration-recording-history.md). This live layout supersedes the earlier mockup’s crowded narration controls.
 
@@ -95,7 +95,7 @@ Acceptance cases: unsupported controls fail before synthesis; default delivery p
 
 ### Phase 4 saved presenters — implemented
 
-**Add my voice…** now opens a two-step recording/transcript → preview/save flow from the existing Presenter picker. Import or record a 3–30 second reference, verify its exact words, listen, then save a named presenter. A separate pinned 0.6B Base pack powers cloning; compact reusable conditioning stays private to the app. Saving selects the voice for the current slide; the optional default applies only to new decks. Manage presenters supports rename, reference replacement and deletion. Existing deck audio remains playable/exportable even when a profile changes or goes missing.
+**Create voice from recording…** now opens a two-step recording/transcript → preview/save flow above the script. Reference import is the first primary action; presenter name and transcript appear after a recording is chosen. Voice creation also works without a selected slide. Model-folder import is a separate advanced action; if needed, the disclosed 2.52 GB model download and preview creation use one button. Import or record a 3–30 second reference, verify its exact words, listen, then save a named presenter. A separate pinned 0.6B Base pack powers cloning; compact reusable conditioning stays private to the app. Saving selects the voice for the current slide; the optional default applies only to new decks. Manage presenters supports rename, reference replacement and deletion. Existing deck audio remains playable/exportable even when a profile changes or goes missing.
 
 The public-reference German/English previews passed user listening. Actual-model reuse/reopen/cancel and unchanged stock regression passed; native import, playback, save, another deck, rename and new-deck default checks passed. See the [Phase 4 implementation, reproduction and limits](implementation/narration-phase4.md). Live microphone capture/permission acceptance, full test-deck voice quality, crash-orphan cleanup and device/Store qualification remain pending. No new recording from the user is required while they have a cold. Tone controls, cloud integration and the separate MCP package remain planned.
 
@@ -159,7 +159,7 @@ Open the [narration experience mockup](mockups/narration-experience.html) in a b
 
 This is a UX prototype: recording/import, speech playback, generation and video export are simulated. It does not generate files or access a microphone. The optional below-slide placement control has been removed from this saved copy.
 
-The mockup illustrates the initial flow and predates the saved-presenter refinement and provider selector. Provider switching/cloud setup are specified in the [provider UX requirements](speech-provider-architecture.md#minimal-frontend-and-presenter-experience), not yet drawn in the mockup. Its **Voice / Use my voice…** controls must become **Presenter / Add my voice…**, with presenter management, a default-for-new-decks checkbox and persistent profiles. Those behaviors are specified in the plan but are not implemented in this mockup. The written requirements below take precedence where the prototype differs.
+The mockup illustrates the initial flow and predates the saved-presenter refinement and provider selector. Provider switching/cloud setup are specified in the [provider UX requirements](speech-provider-architecture.md#minimal-frontend-and-presenter-experience), not yet drawn in the mockup. Its **Voice / Use my voice…** controls must become **Presenter / Create voice from recording…**, with presenter management, a default-for-new-decks checkbox and persistent profiles. Those behaviors are specified in the plan but are not implemented in this mockup. The written requirements below take precedence where the prototype differs.
 
 ### Editor layout and workflow
 
@@ -175,17 +175,17 @@ Keep the existing three-column editor: slide thumbnails on the left, the slide p
 
 ### Saved presenters and one-time voice setup
 
-The Narration tab contains a **Speech provider** selector and a **Presenter** picker listing that provider’s preset voices and saved personal presenters, for example **Uli · My voice**. Language is a separate choice. **Add my voice…** and **Manage presenters** are available from the picker; users do not repeat voice setup for every deck.
+The Narration tab contains a **Speech provider** selector and a **Presenter** picker listing that provider’s preset voices and saved personal presenters, for example **Uli · My voice**. Language is a separate choice. **Create voice from recording…** and **Manage presenters** are available from the picker; users do not repeat voice setup for every deck.
 
-Show **Add my voice…** only when the selected provider supports cloning. Profiles are provider-specific; switching provider does not convert a local Qwen profile or upload its reference automatically. Cloud setup must explain the upload and obtain the user’s explicit choice.
+Show **Create voice from recording…** only when the selected provider supports cloning. Profiles are provider-specific; switching provider does not convert a local Qwen profile or upload its reference automatically. Cloud setup must explain the upload and obtain the user’s explicit choice.
 
 The local Qwen setup flow is **Narration → Presenter → Add my voice…**:
 
-1. Name the presenter, for example **Uli**.
-2. Record a supplied passage or import a clean recording of one speaker. Suggest 10–20 seconds as a product starting point, subject to model/runtime tests. Allow trimming and confirm permission to create and use the voice.
-3. Confirm or correct the transcript. A supplied reading passage avoids requiring a separate transcription model for microphone recording.
-4. Generate and listen to a test sentence. Offer **Sounds good** or **Try another recording** before accepting the profile.
-5. **Save presenter**, with an optional **Use by default for new presentations** checkbox.
+1. Choose **Import reference audio…** (PCM16 WAV, 3–30 seconds; suggest 10–20 seconds), or **Record here** using the supplied passage. Choose the recording language. Trimming/conversion are deferred.
+2. Name the presenter, enter/check the exact spoken words and confirm permission to use the voice. Changing the recording language retains the chosen file and transcript.
+3. Choose **Create voice preview**. If the model is missing, the action is **Download model & create preview**, with its 2.52 GB size explained beforehand. **Already have the model files?** separately exposes **Import existing model folder…**; this does not import a reference recording.
+4. Listen to the primary-language preview before saving, or choose another recording.
+5. **Save presenter**, with optional **Use as default presenter for new decks**. It appears automatically in the Presenter picker across decks; no separate voice-import step is needed.
 
 For local Qwen, explain this as saving a reusable voice, not training a model. Qwen conditions synthesis on the saved reference recording and transcript; cache reusable derived conditioning where the selected engine supports it. Keep the original reference and versioned derived data locally so the presenter survives app restarts and can be reused without recording again. Do not upload these resources through the drafting agent or include them in HTML/video exports.
 
