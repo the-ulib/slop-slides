@@ -334,9 +334,18 @@ impl Store {
         audio::decode(&regular(&path, 3_000_000)?)?;
         Ok(path)
     }
-    pub fn save(&self, token: &str, replace: Option<&str>) -> Result<Profile> {
+    pub fn save(
+        &self,
+        token: &str,
+        replace: Option<&str>,
+        final_name: Option<&str>,
+    ) -> Result<Profile> {
         let _lock = self.lock()?;
+        let final_name = final_name.map(name).transpose()?;
         let mut r = self.draft(token)?;
+        if let Some(value) = &final_name {
+            r.profile.name = value.clone();
+        }
         let mut registry = self.registry()?;
         if !r
             .previewed_languages
@@ -356,7 +365,9 @@ impl Store {
             r.previous_revisions = old.previous_revisions.clone();
             r.previous_revisions.push(old.profile.revision.clone());
             r.profile.id = id.into();
-            r.profile.name = old.profile.name.clone();
+            if final_name.is_none() {
+                r.profile.name = old.profile.name.clone();
+            }
             *old = r.clone();
         } else {
             if registry.profiles.len() >= 1000 {
@@ -508,15 +519,56 @@ mod tests {
         store.previewed(&profile.revision, "de").unwrap();
     }
     #[test]
+    fn final_name_is_validated_and_saved_atomically_without_rebuilding_conditioning() {
+        let root = root();
+        let store = Store::new(&root);
+        let request = request(&root);
+        let first = draft(&store, &request);
+        qualify(&store, &first);
+        for invalid in ["  ", "bad\nname", &"a".repeat(81)] {
+            assert!(store.save(&first.revision, None, Some(invalid)).is_err());
+            assert!(store.list().unwrap().is_empty());
+            assert_eq!(
+                store.draft(&first.revision).unwrap().profile.name,
+                first.name
+            );
+        }
+        let saved = store
+            .save(&first.revision, None, Some("  Final name  "))
+            .unwrap();
+        assert_eq!(saved.name, "Final name");
+        assert_eq!(saved.revision, first.revision);
+        assert_eq!(
+            fs::read(store.data(&saved.revision).unwrap().join("profile.bin")).unwrap(),
+            binary()
+        );
+        assert_eq!(Store::new(&root).list().unwrap()[0].name, "Final name");
+        let replacement = draft(&store, &request);
+        qualify(&store, &replacement);
+        assert!(store
+            .save(&replacement.revision, Some(&saved.id), Some(" "))
+            .is_err());
+        assert_eq!(store.list().unwrap()[0].revision, saved.revision);
+        assert_eq!(store.list().unwrap()[0].name, saved.name);
+        let updated = store
+            .save(&replacement.revision, Some(&saved.id), Some("New name"))
+            .unwrap();
+        assert_eq!(updated.id, saved.id);
+        assert_eq!(updated.revision, replacement.revision);
+        assert_eq!(updated.name, "New name");
+        assert_eq!(Store::new(&root).list().unwrap()[0].name, "New name");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn draft_save_restart_rename_replace_and_delete_keep_identity_but_version_audio() {
         let root = root();
         let request = request(&root);
         let store = Store::new(&root);
         let first = draft(&store, &request);
         assert!(store.list().unwrap().is_empty());
-        assert!(store.save(&first.revision, None).is_err());
+        assert!(store.save(&first.revision, None, None).is_err());
         qualify(&store, &first);
-        let saved = store.save(&first.revision, None).unwrap();
+        let saved = store.save(&first.revision, None, None).unwrap();
         let reopened = Store::new(&root);
         assert_eq!(reopened.list().unwrap()[0].id, saved.id);
         assert!(reopened.resolve(&saved.id, Some(&saved.revision)).is_ok());
@@ -526,7 +578,7 @@ mod tests {
         let replacement = draft(&store, &request);
         qualify(&store, &replacement);
         let updated = reopened
-            .save(&replacement.revision, Some(&saved.id))
+            .save(&replacement.revision, Some(&saved.id), None)
             .unwrap();
         assert_eq!(updated.id, saved.id);
         assert_ne!(updated.revision, saved.revision);
@@ -560,7 +612,7 @@ mod tests {
         request.transcript = "Exact words".into();
         let profile = draft(&store, &request);
         qualify(&store, &profile);
-        let profile = store.save(&profile.revision, None).unwrap();
+        let profile = store.save(&profile.revision, None, None).unwrap();
         fs::write(
             store.data(&profile.revision).unwrap().join("profile.bin"),
             b"broken",

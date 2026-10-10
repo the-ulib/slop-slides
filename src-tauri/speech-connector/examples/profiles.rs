@@ -24,7 +24,7 @@ fn main() {
             let preview = profiles::Store::new(&root).preview_file(&draft.revision, language).unwrap();
             std::fs::copy(preview, out.join(format!("preview-{language}.wav"))).unwrap();
         }
-        let profile = connector.save_profile(&draft.revision, None).unwrap();
+        let profile = connector.save_profile(&draft.revision, None, None).unwrap();
         drop(connector);
         // A fresh connector reloads the persisted profile; reference is not supplied.
         let fresh = QwenConnector::new(root.clone(), Some(helper));

@@ -15,6 +15,8 @@ const passages = {
   de: "Am frühen Morgen treffen wir uns, um frische Ideen zu besprechen. Für den nächsten Schritt wählen wir ein klares Ziel, prüfen verschiedene Möglichkeiten und erklären ruhig, warum kleine Veränderungen einen großen Unterschied machen.",
 };
 
+const warmups = { en: "Testing my microphone, one, two, three.", de: "Ein kurzer Mikrofontest: eins, zwei, drei." };
+
 export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSaved }: { provider: SpeechProvider; initialLanguage: "en" | "de"; replace?: SavedPresenter; onClose: () => void; onSaved: (profile: VoiceProfile) => void }) {
   const speech = useSpeech();
   const [preparing, setPreparing] = useState(false);
@@ -26,6 +28,7 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
   const [reference, setReference] = useState<string | null>(null);
   const [referenceLabel, setReferenceLabel] = useState("");
   const [recording, setRecording] = useState(false);
+  const [warmingUp, setWarmingUp] = useState(false);
   const [requestingMic, setRequestingMic] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [authorized, setAuthorized] = useState(false);
@@ -64,6 +67,7 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
     const current = capture.current;
     capture.current = null;
     setRecording(false);
+    setWarmingUp(false);
     if (!current) return;
     setPreparing(true);
     await attempt(async () => {
@@ -83,13 +87,16 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
     setError(null);
     setSeconds(0);
     try {
-      const current = await startVoiceRecording(() => { void stopRecording(); });
+      setWarmingUp(true);
+      const current = await startVoiceRecording(() => { void stopRecording(); }, { warmupSeconds: 5, onReady: () => {
+        if (alive.current) { setWarmingUp(false); setSeconds(0); setTranscript(passages[language]); }
+      } });
       if (!alive.current) { current.cancel(); return; }
       capture.current = current;
       setReference(null);
       setRecording(true);
-      setTranscript(passages[language]);
     } catch (e) {
+      setWarmingUp(false);
       if (alive.current) setError(`${errorMessage(e)} You can import a WAV recording instead.`);
     } finally { if (alive.current) setRequestingMic(false); }
   };
@@ -159,7 +166,7 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
       <p className="mt-3 text-muted-foreground">Your recording and voice profile stay on this device. Once saved, the presenter works across decks without recording again.</p>
       {!draft ? <div className="mt-4 space-y-4">
         <label className="block">Presenter name
-          <input aria-label="Presenter name" className={`${field} mt-1`} value={name} placeholder="e.g. Uli" maxLength={80} disabled={inputBusy || !!replace} onChange={(e) => setName(e.target.value)} />
+          <input aria-label="Presenter name" className={`${field} mt-1`} value={name} placeholder="e.g. Uli" maxLength={80} disabled={inputBusy} onChange={(e) => setName(e.target.value)} />
         </label>
         <label className="block">Recording language
           <select aria-label="Recording language" className={`${field} mt-1`} value={language} disabled={inputBusy} onChange={(e) => setLanguage(e.target.value as "en" | "de")}><option value="en">English</option><option value="de">German</option></select>
@@ -172,15 +179,17 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
         {source === "record" && <section className="rounded-md bg-accent p-3" aria-label="Recording passage">
           <h3 className="font-medium">Read this passage naturally</h3>
           <p className="mt-2 leading-relaxed">{passages[language]}</p>
-          <p className="mt-2 text-xs text-muted-foreground">Read it through first. Start when ready, using your usual presentation voice. Click Stop after the last word.</p>
-          <button className={`${primary} mt-3`} disabled={busy || requestingMic} onClick={() => recording ? void stopRecording() : void record()}>{recording ? `Stop recording · ${seconds}s` : requestingMic ? "Requesting microphone…" : "Start recording"}</button>
+          <p className="mt-2 text-xs text-muted-foreground">Read it through first. After Start, speak the microphone test phrase for five seconds, then read the passage when prompted. Only the passage is saved. Click Stop after the last word.</p>
+          <p className="mt-2 text-muted-foreground">Microphone test phrase: “{warmups[language]}”</p>
+          {recording && <p role="status" className="mt-3 font-medium">{warmingUp ? `Microphone warm-up · ${Math.max(0, 5 - seconds)}s · speak the test phrase` : "Recording · read the main passage now"}</p>}
+          <button className={`${primary} mt-3`} disabled={busy || requestingMic} onClick={() => { if (recording && warmingUp) { capture.current?.cancel(); capture.current = null; setRecording(false); setWarmingUp(false); } else if (recording) void stopRecording(); else void record(); }}>{recording ? warmingUp ? "Cancel warm-up" : `Stop recording · ${seconds}s` : requestingMic ? "Requesting microphone…" : "Start recording"}</button>
         </section>}
         {reference && <>
           <p role="status" className="text-muted-foreground">Recording ready: {referenceLabel}</p>
           {tempRecording.current && <audio aria-label="Reference recording" controls preload="metadata" className="w-full" src={deckFileUrl(".recording", `${tempRecording.current}.wav`)} />}
           <button className={secondary} disabled={inputBusy} onClick={() => void attempt(() => restart("record"))}>Record again…</button>
         </>}
-        {(reference || recording) && <>
+        {(reference || (recording && !warmingUp)) && <>
           <label className="block">Exact spoken words
             <textarea aria-label="Voice recording transcript" className={`${field} mt-1 min-h-28`} value={transcript} maxLength={4096} disabled={inputBusy} placeholder="Enter exactly what is spoken in the recording…" onChange={(e) => setTranscript(e.target.value)} />
           </label>
@@ -195,7 +204,9 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
           <button className={primary} disabled={inputBusy || !name.trim() || !reference || !transcript.trim() || !authorized} onClick={() => void attempt(create)}>{provider.cloneReady ? "Create voice preview" : "Download model & create preview"}</button>
         </>}
       </div> : <div className="mt-4 space-y-4">
-        <p className="font-medium">{draft.name}</p>
+        <label className="block">Presenter name
+          <input aria-label="Presenter name" className={`${field} mt-1`} value={name} placeholder="e.g. Uli" maxLength={80} disabled={busy || saving} onChange={(e) => setName(e.target.value)} />
+        </label>
         <p className="text-muted-foreground">Listen for likeness, pronunciation and pacing. If you are unhappy with the voice, record again. A cross-language accent may remain.</p>
         <label className="block">Preview language
           <select aria-label="Voice preview language" className={`${field} mt-1`} value={previewLanguage} disabled={busy || saving} onChange={(e) => setPreviewLanguage(e.target.value as "en" | "de")}><option value="en">English</option><option value="de">German</option></select>
@@ -209,10 +220,10 @@ export function VoiceSetup({ provider, initialLanguage, replace, onClose, onSave
         <p className="text-muted-foreground">{previews[draft.referenceLanguage] ? "Listen before saving. Saving adds this voice to the Presenter menu in every deck." : `Generate the ${draft.referenceLanguage === "de" ? "German" : "English"} preview before saving.`}</p>
         <label className="flex gap-2"><input type="checkbox" checked={makeDefault} disabled={busy || saving} onChange={(e) => setMakeDefault(e.target.checked)} />Use as default presenter for new decks</label>
         {replace && <p className="text-muted-foreground">Replaces {replace.name} for future generation. Existing recordings stay available; affected narration will need a new take.</p>}
-        <button className={`${primary} w-full`} disabled={busy || saving || !previews[draft.referenceLanguage]} onClick={() => void attempt(async () => {
+        <button className={`${primary} w-full`} disabled={busy || saving || !name.trim() || !previews[draft.referenceLanguage]} onClick={() => void attempt(async () => {
           setSaving(true);
           try {
-            const profile = await api.voiceProfileAction(provider.id, "save", draft.revision, replace?.id ?? null);
+            const profile = await api.voiceProfileAction(provider.id, "save", draft.revision, replace?.id ?? null, name.trim());
             if (!profile) throw new Error("Presenter could not be saved.");
             saved.current = true;
             if (makeDefault) { try { await api.setDefaultPresenter({ providerId: provider.id, presenterId: profile.id }); } catch (e) { useSpeech.setState({ error: `Presenter saved; default could not be set: ${errorMessage(e)}` }); } }

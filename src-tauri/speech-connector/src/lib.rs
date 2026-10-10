@@ -285,7 +285,14 @@ pub trait SpeechProvider: Send + Sync {
             ))
         })
     }
-    fn save_profile(&self, _token: &str, _replace: Option<&str>) -> Result<profiles::Profile> {
+    /// Publish a qualified draft, optionally overriding its display name atomically.
+    /// A name change preserves conditioning and needs no new preview.
+    fn save_profile(
+        &self,
+        _token: &str,
+        _replace: Option<&str>,
+        _name: Option<&str>,
+    ) -> Result<profiles::Profile> {
         Err(Error::msg("Saved presenters are unsupported."))
     }
     fn discard_profile(&self, _token: &str) -> Result<()> {

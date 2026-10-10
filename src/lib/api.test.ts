@@ -24,7 +24,7 @@ const CASES = [
   ["installCloningPack", () => api.installCloningPack("job", null, "qwen-local"), "install_cloning_pack", { jobId: "job", source: null, providerId: "qwen-local" }],
   ["createVoiceProfile", () => api.createVoiceProfile("job", "qwen-local", { name: "My voice", language: "en", transcript: "Exact words", reference: "/voice.wav", authorized: true }), "create_voice_profile", { jobId: "job", providerId: "qwen-local", request: { name: "My voice", language: "en", transcript: "Exact words", reference: "/voice.wav", authorized: true } }],
   ["previewVoiceProfile", () => api.previewVoiceProfile("job", "qwen-local", "token", "de"), "preview_voice_profile", { jobId: "job", providerId: "qwen-local", token: "token", language: "de" }],
-  ["voiceProfileAction", () => api.voiceProfileAction("qwen-local", "rename", "profile:id", "Name"), "voice_profile_action", { providerId: "qwen-local", action: "rename", id: "profile:id", value: "Name" }],
+  ["voiceProfileAction", () => api.voiceProfileAction("qwen-local", "rename", "profile:id", "Name"), "voice_profile_action", { providerId: "qwen-local", action: "rename", id: "profile:id", value: "Name", name: null }],
   ["setDefaultPresenter", () => api.setDefaultPresenter({ providerId: "qwen-local", presenterId: "profile:id" }), "set_default_presenter", { choice: { providerId: "qwen-local", presenterId: "profile:id" } }],
   ["importVoiceRecording", () => api.importVoiceRecording("/sample.wav"), "import_voice_recording", { path: "/sample.wav" }],
   ["stageVoiceRecording", () => api.stageVoiceRecording([1, 2]), "stage_voice_recording", { bytes: [1, 2] }],
@@ -150,6 +150,11 @@ describe("api", () => {
     expect(invoke).toHaveBeenLastCalledWith("send_message", {
       args: { deckId: "talk", prompt: "/compact", provider: "copilot", model: "gpt-x", effort: "", contextWindow: null, compact: true },
     });
+  });
+
+  it("passes the final presenter name and replacement identity separately at save", async () => {
+    await api.voiceProfileAction("qwen-local", "save", "revision", "profile:id", "Final name");
+    expect(invoke).toHaveBeenCalledWith("voice_profile_action", { providerId: "qwen-local", action: "save", id: "revision", value: "profile:id", name: "Final name" });
   });
 
   it("covers every api function", () => {

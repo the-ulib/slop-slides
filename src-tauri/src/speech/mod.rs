@@ -501,6 +501,7 @@ impl SpeechManager {
         action: &str,
         id: &str,
         value: Option<&str>,
+        name: Option<&str>,
     ) -> Result<Option<speech_connector::profiles::Profile>> {
         let provider = self.provider(app, provider_id)?;
         let (lease, _) = self.begin(
@@ -514,7 +515,7 @@ impl SpeechManager {
             provider.unload().await?;
         }
         let result = match action {
-            "save" => provider.save_profile(id, value).map(Some),
+            "save" => provider.save_profile(id, value, name).map(Some),
             "discard" => provider.discard_profile(id).map(|_| None),
             "rename" => provider
                 .rename_profile(id, value.unwrap_or(""))

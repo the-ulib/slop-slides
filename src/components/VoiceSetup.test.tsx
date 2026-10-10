@@ -69,8 +69,44 @@ describe("voice setup", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Use as default presenter for new decks" }));
     fireEvent.click(screen.getByText("Save presenter"));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(profile));
-    expect(api.voiceProfileAction).toHaveBeenCalledWith("qwen-local", "save", "rev1", null);
+    expect(api.voiceProfileAction).toHaveBeenCalledWith("qwen-local", "save", "rev1", null, "Uli");
     expect(api.setDefaultPresenter).toHaveBeenCalledWith({ providerId: "qwen-local", presenterId: "profile:123" });
+  });
+  it("saves the name edited beside the preview without recreating the voice", async () => {
+    const onSaved = vi.fn();
+    render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={onSaved} />);
+    await prepare(); fireEvent.click(screen.getByText("Create voice preview")); await screen.findByLabelText("Voice setup preview");
+    await waitFor(() => expect((screen.getByLabelText("Presenter name") as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText("Presenter name"), { target: { value: " " } });
+    expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Presenter name"), { target: { value: "  My presenter  " } });
+    vi.mocked(api.voiceProfileAction).mockResolvedValue({ ...profile, name: "My presenter" });
+    fireEvent.click(screen.getByText("Save presenter"));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith({ ...profile, name: "My presenter" }));
+    expect(api.voiceProfileAction).toHaveBeenCalledWith("qwen-local", "save", "rev1", null, "My presenter");
+    expect(api.createVoiceProfile).toHaveBeenCalledOnce(); expect(api.previewVoiceProfile).toHaveBeenCalledOnce();
+  });
+  it("cues the main passage after warm-up and cancels warm-up without staging audio", async () => {
+    let ready!: () => void;
+    const cancel = vi.fn(), stop = vi.fn().mockResolvedValue(new Uint8Array([4, 5]));
+    vi.mocked(startVoiceRecording).mockImplementation(async (_limit, options) => { ready = options!.onReady!; return { cancel, stop }; });
+    const { unmount } = render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByText("Record here")); fireEvent.click(screen.getByText("Start recording"));
+    await screen.findByText("Cancel warm-up");
+    expect(screen.getByRole("status").textContent).toContain("Microphone warm-up");
+    expect(screen.getByLabelText("Recording passage").textContent).toContain("Ein kurzer Mikrofontest");
+    expect(screen.queryByLabelText("Voice recording transcript")).toBeNull();
+    expect(startVoiceRecording).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ warmupSeconds: 5 }));
+    fireEvent.click(screen.getByText("Cancel warm-up"));
+    expect(cancel).toHaveBeenCalledOnce(); expect(api.stageVoiceRecording).not.toHaveBeenCalled(); expect(stop).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Start recording")); await screen.findByText("Cancel warm-up");
+    act(() => ready());
+    expect(screen.getByRole("status").textContent).toBe("Recording · read the main passage now");
+    const transcript = (screen.getByLabelText("Voice recording transcript") as HTMLTextAreaElement).value;
+    expect(transcript).toContain("Am frühen Morgen"); expect(transcript).not.toContain("Mikrofontest");
+    fireEvent.click(screen.getByText(/Stop recording/)); await screen.findByText("Recording ready: Microphone recording");
+    expect(api.stageVoiceRecording).toHaveBeenCalledWith([4, 5]);
+    unmount();
   });
   it("keeps the draft after preview failure and discards it on close, without saving", async () => {
     vi.mocked(api.previewVoiceProfile).mockRejectedValue(new Error("Generation cancelled"));
@@ -86,7 +122,7 @@ describe("voice setup", () => {
     expect(screen.getByText("Read this passage naturally")).toBeTruthy();
     expect(startVoiceRecording).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Start recording")); await screen.findByText(/Permission denied.*import a WAV/);
-    const cancel = vi.fn(); vi.mocked(startVoiceRecording).mockResolvedValueOnce({ cancel, stop: vi.fn() });
+    const cancel = vi.fn(); vi.mocked(startVoiceRecording).mockImplementationOnce(async (_limit, options) => { options?.onReady?.(); return { cancel, stop: vi.fn() }; });
     fireEvent.click(screen.getByText("Start recording")); await waitFor(() => expect(screen.getByText(/Stop recording/)).toBeTruthy());
     expect((screen.getByLabelText("Voice recording transcript") as HTMLTextAreaElement).value).toContain("On a bright morning");
     unmount(); expect(cancel).toHaveBeenCalled();
@@ -101,7 +137,7 @@ describe("voice setup", () => {
   });
   it("shows the localized passage before capture and stages the exact supplied words", async () => {
     const stop = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
-    vi.mocked(startVoiceRecording).mockResolvedValue({ cancel: vi.fn(), stop });
+    vi.mocked(startVoiceRecording).mockImplementation(async (_limit, options) => { options?.onReady?.(); return { cancel: vi.fn(), stop }; });
     render(<VoiceSetup provider={provider()} initialLanguage="en" onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Presenter name"), { target: { value: "Uli" } });
     fireEvent.click(screen.getByText("Record here"));

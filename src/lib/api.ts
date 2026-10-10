@@ -136,7 +136,7 @@ export const api = {
   installCloningPack: (jobId: string, source: string | null, providerId: string) => invoke<void>("install_cloning_pack", { jobId, source, providerId }),
   createVoiceProfile: (jobId: string, providerId: string, request: { name: string; language: string; transcript: string; reference: string; authorized: boolean }) => invoke<import("./speech").VoiceProfile>("create_voice_profile", { jobId, providerId, request }),
   previewVoiceProfile: (jobId: string, providerId: string, token: string, language: string) => invoke<void>("preview_voice_profile", { jobId, providerId, token, language }),
-  voiceProfileAction: (providerId: string, action: "save" | "discard" | "rename" | "delete", id: string, value: string | null = null) => invoke<import("./speech").VoiceProfile | null>("voice_profile_action", { providerId, action, id, value }),
+  voiceProfileAction: (providerId: string, action: "save" | "discard" | "rename" | "delete", id: string, value: string | null = null, name: string | null = null) => invoke<import("./speech").VoiceProfile | null>("voice_profile_action", { providerId, action, id, value, name }),
   setDefaultPresenter: (choice: import("./speech").DefaultPresenter | null) => invoke<void>("set_default_presenter", { choice }),
   importVoiceRecording: (path: string) => invoke<{ id: string; path: string }>("import_voice_recording", { path }),
   stageVoiceRecording: (bytes: number[]) => invoke<{ id: string; path: string }>("stage_voice_recording", { bytes }),

@@ -269,9 +269,17 @@ async fn voice_profile_action(
     action: String,
     id: String,
     value: Option<String>,
+    name: Option<String>,
 ) -> Result<Option<speech_connector::profiles::Profile>> {
     manager
-        .profile_action(&app, &provider_id, &action, &id, value.as_deref())
+        .profile_action(
+            &app,
+            &provider_id,
+            &action,
+            &id,
+            value.as_deref(),
+            name.as_deref(),
+        )
         .await
 }
 #[tauri::command]

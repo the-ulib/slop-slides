@@ -310,8 +310,13 @@ impl SpeechProvider for QwenConnector {
             store.previewed(token, language)
         })
     }
-    fn save_profile(&self, token: &str, replace: Option<&str>) -> Result<crate::profiles::Profile> {
-        crate::profiles::Store::new(&self.0.root).save(token, replace)
+    fn save_profile(
+        &self,
+        token: &str,
+        replace: Option<&str>,
+        name: Option<&str>,
+    ) -> Result<crate::profiles::Profile> {
+        crate::profiles::Store::new(&self.0.root).save(token, replace, name)
     }
     fn discard_profile(&self, token: &str) -> Result<()> {
         crate::profiles::Store::new(&self.0.root).discard(token)
