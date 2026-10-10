@@ -28,5 +28,6 @@
   "presenterName": "Public German Test (saved)",
   "liveMicrophoneChecked": false,
   "replacementDeletionChecked": "unit lifecycle tests; native controls present, no native destructive test",
-  "libraryListing": "macOS directory access remained pending; created test decks used for restart verification"
+  "libraryListing": "Passed after user approved macOS folder access: six recent decks listed; existing Narration Video Acceptance deck opened with its original Ryan presenter and 32.9-second recording",
+  "existingDeckOpenedAfterFolderApproval": true
 }
