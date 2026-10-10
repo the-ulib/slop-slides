@@ -26,20 +26,39 @@ beforeEach(() => {
   save.mockReset();
   openDialog.mockReset();
   revealItemInDir.mockReset();
-  useApp.setState({ deck: deckFor(DECK_HTML), view: "slides", chatOpen: true, codeDirty: false, presenting: false, error: null, imageExport: null });
+  useApp.setState({ deck: deckFor(DECK_HTML), view: "slides", chatOpen: true, sidebarTab: "chat", codeDirty: false, presenting: false, error: null, imageExport: null });
 });
 
-describe("chat toggle", () => {
-  it("hides and shows the chat panel", () => {
+describe("sidebar navigation", () => {
+  it("hides and shows the sidebar without changing its selected tab", () => {
+    useApp.setState({ sidebarTab: "narration" });
     render(<TopBar />);
-    const hide = screen.getByRole("button", { name: "Hide chat" });
+    const hide = screen.getByRole("button", { name: "Hide sidebar" });
     expect(hide.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(hide);
     expect(useApp.getState().chatOpen).toBe(false);
-    const show = screen.getByRole("button", { name: "Show chat" });
+    const show = screen.getByRole("button", { name: "Show sidebar" });
     expect(show.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(show);
     expect(useApp.getState().chatOpen).toBe(true);
+    expect(useApp.getState().sidebarTab).toBe("narration");
+  });
+
+  it.each([false, true])("opens narration directly when sidebar visibility is %s", (chatOpen) => {
+    useApp.setState({ chatOpen, sidebarTab: "chat" });
+    render(<TopBar />);
+    const button = screen.getByRole("button", { name: "Open narration" });
+    expect(button.textContent).toBe("Narration");
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(button);
+    expect(useApp.getState().chatOpen).toBe(true);
+    expect(useApp.getState().sidebarTab).toBe("narration");
+    expect(localStorage.getItem("slopslide.sidebarTab")).toBe("narration");
+    expect(localStorage.getItem("slopslide.chatOpen")).toBe("true");
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button);
+    expect(useApp.getState().chatOpen).toBe(true);
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
 

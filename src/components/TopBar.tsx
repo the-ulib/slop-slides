@@ -2,6 +2,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle,
+  AudioLines,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -122,6 +123,7 @@ export function TopBar() {
         onImages={() => void exportImages()}
         onVideo={() => void useVideo.getState().open(deck.id, true)}
       />
+      <NarrationButton />
       <button
         type="button"
         disabled={deck.slides.length === 0}
@@ -131,16 +133,29 @@ export function TopBar() {
         <Play className="size-3.5 fill-current" />
         Present
       </button>
-      <ChatToggle />
+      <SidebarToggle />
     </header>
   );
 }
 
-/** Shows or hides the chat panel on the right. */
-function ChatToggle() {
+/** Direct entry remains visible even when the right sidebar is closed. */
+function NarrationButton() {
+  const open = useApp((s) => s.chatOpen && s.sidebarTab === "narration");
+  return <button
+    type="button"
+    title="Open narration scripts and audio"
+    aria-label="Open narration"
+    aria-pressed={open}
+    onClick={() => useApp.getState().setSidebarTab("narration")}
+    className={cn("flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-accent", open && "bg-accent")}
+  ><AudioLines className="size-3.5" />Narration</button>;
+}
+
+/** Shows or hides both Chat and Narration in the right sidebar. */
+function SidebarToggle() {
   const chatOpen = useApp((s) => s.chatOpen);
   const Icon = chatOpen ? PanelRightClose : PanelRightOpen;
-  const label = chatOpen ? "Hide chat" : "Show chat";
+  const label = chatOpen ? "Hide sidebar" : "Show sidebar";
   return (
     <button
       type="button"
