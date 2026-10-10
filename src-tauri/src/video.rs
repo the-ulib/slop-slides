@@ -121,7 +121,8 @@ pub fn timeline(
                 issues.push(format!("{label}: generate narration audio first."));
                 continue;
             };
-            let expected = cache::Source::from_manifest(manifest, id)?;
+            let mut expected = cache::Source::from_manifest(manifest, id)?;
+            expected.presenter_revision = take.source.presenter_revision.clone();
             if take.source != expected {
                 issues.push(if take.source.text != expected.text {
                     format!("{label}: the script changed; regenerate its audio.")
@@ -662,6 +663,34 @@ mod tests {
         take
     }
     use speech_connector::SpeechProvider;
+    #[test]
+    fn frozen_cloned_take_exports_without_any_live_profile_or_model() {
+        let dir = Temp::new();
+        let mut m = narration::Manifest {
+            presenter_id: "profile:deleted".into(),
+            ..Default::default()
+        };
+        m.slides.insert(
+            "a".into(),
+            narration::SlideNarration {
+                text: "Test speech".into(),
+                ..Default::default()
+            },
+        );
+        let mut source = cache::Source::from_manifest(&m, "a").unwrap();
+        source.presenter_revision = Some("old-revision".into());
+        let take = cache::publish_for(
+            &dir.0,
+            source,
+            &[100; 24000],
+            &speech_connector::FixtureProvider.describe(),
+        )
+        .unwrap();
+        m.slides.get_mut("a").unwrap().accepted_take_id = Some(take.id.clone());
+        let t = timeline(&html(&["a"]), &m, &dir.0, "job", "deck").unwrap();
+        assert_eq!(t.slides[0].take_id.as_deref(), Some(take.id.as_str()));
+        assert!(t.total_samples >= 24000);
+    }
     #[test]
     fn unconfigured_and_legacy_unset_silent_slides_use_five_seconds_and_keep_custom_timing() {
         let dir = Temp::new();

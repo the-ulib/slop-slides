@@ -22,6 +22,24 @@ beforeEach(() => {
   useSpeech.setState({ status: { providers: [testSpeechProvider()], job: null }, deckId: "talk", takes: {}, job: null, error: null, message: null });
   vi.spyOn(useSpeech.getState(), "initialize").mockResolvedValue(); vi.spyOn(useSpeech.getState(), "loadTakes").mockResolvedValue();
 });
+it("uses a saved presenter's readiness independently of the stock pack", () => {
+  const profile = { id: "profile:test", name: "My voice", languages: ["en", "de"], ready: true, revision: "one" };
+  const p = { ...testSpeechProvider(), ready: false, supportsCloning: true, cloneReady: true, voices: [profile] };
+  const manifest = { ...doc.manifest, presenterId: profile.id };
+  useSpeech.setState({ status: { providers: [p], job: null, presenters: [] } });
+  render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={manifest} editable />);
+  expect((screen.getByText("Generate audio") as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByText("Download voice pack")).toBeNull();
+  expect(screen.getByText("Add my voice…")).toBeTruthy();
+});
+it("explains a missing saved presenter while keeping its recording accessible", () => {
+  const manifest = { ...doc.manifest, presenterId: "profile:missing" };
+  useSpeech.setState({ takes: { intro: take } });
+  render(<SpeechControls deck={deckFor(DECK_HTML)} selected="intro" manifest={manifest} editable />);
+  expect((screen.getByText("Generate another take") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText(/saved presenter is unavailable/)).toBeTruthy();
+  expect(useSpeech.getState().takes.intro?.id).toBe(take.id);
+});
 it("applies presenter and pace to this slide without changing deck defaults", () => {
   const edit = vi.spyOn(useNarration.getState(), "edit");
   const generate = vi.spyOn(useSpeech.getState(), "generate").mockResolvedValue();

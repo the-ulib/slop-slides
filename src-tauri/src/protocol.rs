@@ -111,6 +111,23 @@ fn audio_response(body: Vec<u8>, range: Option<&str>) -> Response<Cow<'static, [
 
 fn serve(app: &AppHandle, raw_path: &str) -> Result<(&'static str, Vec<u8>), StatusCode> {
     let (deck_id, rel) = split_path(raw_path)?;
+    if deck_id == ".recording" {
+        let id = rel.strip_suffix(".wav").ok_or(StatusCode::NOT_FOUND)?;
+        let path =
+            crate::speech::reference_recording_file(app, id).map_err(|_| StatusCode::NOT_FOUND)?;
+        return std::fs::read(path)
+            .map(|body| ("audio/wav", body))
+            .map_err(|_| StatusCode::NOT_FOUND);
+    }
+    if deck_id == ".voice" {
+        let (token, name) = rel.split_once('/').ok_or(StatusCode::NOT_FOUND)?;
+        let language = name.strip_suffix(".wav").ok_or(StatusCode::NOT_FOUND)?;
+        let path = crate::speech::profile_preview_file(app, token, language)
+            .map_err(|_| StatusCode::NOT_FOUND)?;
+        return std::fs::read(path)
+            .map(|body| ("audio/wav", body))
+            .map_err(|_| StatusCode::NOT_FOUND);
+    }
     if deck_id == ".video" {
         let (job, name) = rel.split_once('/').ok_or(StatusCode::NOT_FOUND)?;
         let path = app

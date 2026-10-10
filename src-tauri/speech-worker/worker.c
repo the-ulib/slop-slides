@@ -63,14 +63,24 @@ static int self_test(void) {
     puts("SLOPSPEECH {\"version\":1,\"type\":\"self-test\",\"passed\":true}");
     return 0;
 }
+#include "profile.h"
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--self-test")) return self_test();
-    if (argc != 2) return 2;
+    int creating = argc == 6 && !strcmp(argv[1], "--create-profile");
+    if (argc != 2 && argc != 3 && !creating) return 2;
     signal(SIGTERM, stop); signal(SIGINT, stop);
     setenv("QWEN_NO_KLEIDI", "1", 1);
     qwen_set_threads(4);
-    qwen_tts_ctx_t *ctx = qwen_tts_load_ex(argv[1], 0, 0, 0);
+    qwen_tts_ctx_t *ctx = qwen_tts_load_ex(argv[creating ? 2 : 1], 0, 0, 0);
     if (!ctx) { error("Could not load the installed voice pack."); return 1; }
+    if (creating) {
+        int ok = profile_create(ctx, argv[3], argv[4], argv[5]);
+        qwen_tts_unload(ctx);
+        if (!ok) { error("Could not create a reusable voice from this recording."); return 1; }
+        puts("SLOPSPEECH {\"version\":1,\"type\":\"created\"}"); return 0;
+    }
+    int cloned = argc == 3;
+    if (cloned && !profile_load(ctx, argv[2])) { error("Could not load the saved presenter."); qwen_tts_unload(ctx); return 1; }
     qwen_kleidi_prepack(ctx);
     ctx->temperature = 0.9f; ctx->top_k = 50; ctx->top_p = 1.0f;
     ctx->rep_penalty = 1.05f; ctx->max_tokens = LIMIT;
@@ -91,11 +101,11 @@ int main(int argc, char **argv) {
         valid = valid && text[0] && strlen(text) <= 4096 && strlen(output) < 4096 &&
             end && !*end && isfinite(speed) && speed >= 0.9f && speed <= 1.25f &&
             (!strcmp(language, "English") || !strcmp(language, "German"));
-        int speaker_id = speaker ? qwen_tts_resolve_speaker(ctx, speaker) : -1;
+        int speaker_id = cloned ? 0 : (speaker ? qwen_tts_resolve_speaker(ctx, speaker) : -1);
         float *audio = NULL; int n = 0;
         if (!valid || speaker_id < 0) error("Invalid speech request.");
         else {
-            qwen_tts_set_language(ctx, language); qwen_tts_set_speaker(ctx, speaker_id);
+            qwen_tts_set_language(ctx, language); if (!cloned) qwen_tts_set_speaker(ctx, speaker_id);
             ctx->seed = 42; before = qwen_tts_frames_generated(); last_report = 0;
             int rc = qwen_tts_generate(ctx, text, &audio, &n);
             unsigned long long frames = qwen_tts_frames_generated() - before;

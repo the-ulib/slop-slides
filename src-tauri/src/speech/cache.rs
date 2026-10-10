@@ -23,6 +23,8 @@ pub struct Source {
     pub pace: f64,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub narration_format_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presenter_revision: Option<String>,
 }
 fn is_zero(n: &u32) -> bool {
     *n == 0
@@ -39,6 +41,7 @@ impl Source {
         }
         let plan = speech_connector::narration::parse(&text)?;
         let source = Self {
+            presenter_revision: None,
             narration_format_version: if plan.marked {
                 speech_connector::narration::FORMAT_VERSION
             } else {
@@ -73,6 +76,7 @@ impl Source {
             .into(),
             voice_id: self.presenter_id.clone(),
             pace: self.pace,
+            voice_revision: self.presenter_revision.clone(),
         }
     }
     #[cfg(test)]
@@ -86,6 +90,7 @@ impl Source {
         let identity = if self.provider_id == speech_connector::QWEN_ID
             && engine == ENGINE
             && self.narration_format_version == 0
+            && self.presenter_revision.is_none()
         {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
@@ -428,7 +433,10 @@ pub fn accept(dir: &Path, slide: &str, take: &Take) -> Result<bool> {
             }
         }
         if Source::from_manifest(&doc.manifest, slide)
-            .map(|s| s.key_for(&take.engine_version, &take.model_revision))
+            .map(|mut s| {
+                s.presenter_revision = take.source.presenter_revision.clone();
+                s.key_for(&take.engine_version, &take.model_revision)
+            })
             .ok()
             .as_deref()
             != Some(&take.key)
@@ -517,6 +525,54 @@ pub fn decode_wav(wav: &[u8]) -> Result<Vec<i16>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use speech_connector::SpeechProvider;
+    #[test]
+    fn profile_revision_versions_cache_and_accepted_take_preserves_frozen_source() {
+        let dir = dir();
+        let mut m = narration::Manifest {
+            presenter_id: "profile:test".into(),
+            ..Default::default()
+        };
+        m.slides.insert(
+            "intro".into(),
+            narration::SlideNarration {
+                text: "Hello".into(),
+                ..Default::default()
+            },
+        );
+        narration::save(&dir, m.clone(), "missing").unwrap();
+        let mut old = Source::from_manifest(&m, "intro").unwrap();
+        old.presenter_revision = Some("revision-1".into());
+        let new = Source {
+            presenter_revision: Some("revision-2".into()),
+            ..old.clone()
+        };
+        assert_ne!(
+            old.key_for("profile-engine", "base"),
+            new.key_for("profile-engine", "base")
+        );
+        let mut descriptor = speech_connector::FixtureProvider.describe();
+        descriptor.engine_version = "profile-engine".into();
+        descriptor.model_revision = "base".into();
+        let take = publish_for(&dir, old, &[1, 2, 3], &descriptor).unwrap();
+        assert!(accept(&dir, "intro", &take).unwrap());
+        assert_eq!(
+            read(&dir, &take.id)
+                .unwrap()
+                .unwrap()
+                .source
+                .presenter_revision
+                .as_deref(),
+            Some("revision-1")
+        );
+        assert_eq!(
+            narration::load(&dir).unwrap().manifest.slides["intro"]
+                .accepted_take_id
+                .as_deref(),
+            Some(take.id.as_str())
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
     fn dir() -> PathBuf {
         let p = std::env::temp_dir().join(format!("speech-cache-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&p).unwrap();
@@ -526,6 +582,7 @@ mod tests {
         Source {
             provider_id: narration::default_provider(),
             narration_format_version: 0,
+            presenter_revision: None,
             text: "Hello".into(),
             language: narration::Language::En,
             presenter_id: "preset:ryan".into(),

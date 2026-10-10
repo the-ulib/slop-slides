@@ -2,6 +2,7 @@
 pub mod audio;
 pub mod models;
 pub mod narration;
+pub mod profiles;
 mod qwen;
 mod segments;
 mod worker;
@@ -77,6 +78,16 @@ impl Cancellation {
 pub struct Voice {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ready: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_language: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +120,10 @@ pub struct Descriptor {
     pub languages: Vec<String>,
     pub pace: Pace,
     pub supports_cloning: bool,
+    #[serde(default)]
+    pub clone_ready: bool,
+    #[serde(default)]
+    pub clone_setup: Option<Setup>,
     pub setup: Option<Setup>,
     pub voice_hint: Option<String>,
     #[serde(default)]
@@ -123,8 +138,23 @@ pub struct SynthesisRequest {
     pub language: String,
     pub voice_id: String,
     pub pace: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_revision: Option<String>,
 }
 impl Descriptor {
+    pub fn for_voice(&self, id: &str) -> Self {
+        let mut d = self.clone();
+        if let Some(v) = self.voices.iter().find(|v| v.id == id) {
+            d.ready = v.ready.unwrap_or(self.ready);
+            if let Some(revision) = &v.model_revision {
+                d.model_revision = revision.clone();
+            }
+            if let Some(engine) = &v.engine_version {
+                d.engine_version = engine.clone();
+            }
+        }
+        d
+    }
     pub fn validate(&self, r: &SynthesisRequest) -> Result<()> {
         if self.contract_version != 1 || !self.available {
             return Err(Error::msg(
@@ -133,12 +163,23 @@ impl Descriptor {
                     .unwrap_or_else(|| "Speech provider unavailable.".into()),
             ));
         }
-        if !self.ready {
+        if !self.for_voice(&r.voice_id).ready {
             return Err(Error::msg("Set up the selected speech provider first."));
         }
         if !self.voices.iter().any(|v| v.id == r.voice_id) {
             return Err(Error::msg(
                 "Choose an available presenter for this speech provider.",
+            ));
+        }
+        if self
+            .voices
+            .iter()
+            .find(|v| v.id == r.voice_id)
+            .and_then(|v| v.revision.as_ref())
+            != r.voice_revision.as_ref()
+        {
+            return Err(Error::msg(
+                "The presenter changed. Refresh and generate again.",
             ));
         }
         if !self.languages.contains(&r.language) {
@@ -205,6 +246,57 @@ pub trait SpeechProvider: Send + Sync {
             ))
         })
     }
+    fn setup_cloning(
+        &self,
+        _source: Option<PathBuf>,
+        _cancel: Cancellation,
+        _progress: Progress,
+    ) -> Task<'_, ()> {
+        Box::pin(async { Err(Error::msg("This provider does not support cloning setup.")) })
+    }
+    fn unload(&self) -> Task<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+    fn profiles(&self) -> Result<Vec<profiles::Profile>> {
+        Ok(vec![])
+    }
+    fn create_profile(
+        &self,
+        _request: profiles::Create,
+        _cancel: Cancellation,
+        _progress: Progress,
+    ) -> Task<'_, profiles::Profile> {
+        Box::pin(async {
+            Err(Error::msg(
+                "This provider does not support saved presenters.",
+            ))
+        })
+    }
+    fn preview_profile<'a>(
+        &'a self,
+        _token: &'a str,
+        _language: &'a str,
+        _cancel: Cancellation,
+        _progress: Progress,
+    ) -> Task<'a, ()> {
+        Box::pin(async {
+            Err(Error::msg(
+                "This provider does not support presenter previews.",
+            ))
+        })
+    }
+    fn save_profile(&self, _token: &str, _replace: Option<&str>) -> Result<profiles::Profile> {
+        Err(Error::msg("Saved presenters are unsupported."))
+    }
+    fn discard_profile(&self, _token: &str) -> Result<()> {
+        Err(Error::msg("Saved presenters are unsupported."))
+    }
+    fn rename_profile(&self, _id: &str, _name: &str) -> Result<()> {
+        Err(Error::msg("Saved presenters are unsupported."))
+    }
+    fn delete_profile(&self, _id: &str) -> Result<()> {
+        Err(Error::msg("Saved presenters are unsupported."))
+    }
 }
 /// Development-only interchange fixture. It produces a short tone, never fake speech.
 pub struct FixtureProvider;
@@ -223,6 +315,7 @@ impl SpeechProvider for FixtureProvider {
             voices: vec![Voice {
                 id: "tone:440".into(),
                 name: "440 Hz test tone".into(),
+                revision: None, ready: None, model_revision: None, engine_version: None, reference_language: None,
             }],
             languages: vec!["en".into(), "de".into()],
             pace: Pace {
@@ -232,6 +325,7 @@ impl SpeechProvider for FixtureProvider {
                 choices: vec![0.5, 1.0, 1.5, 2.0],
             },
             supports_cloning: false,
+            clone_ready: false, clone_setup: None,
             setup: None,
             narration_controls: narration::Controls::default(),
             narration_guidance: "Development fixture: audio is a tone, not real speech. Explicit pauses use the shared renderer; tonal instructions are unsupported.".into(),
@@ -281,6 +375,7 @@ mod tests {
             text: "Hello".into(),
             language: "en".into(),
             voice_id: "tone:440".into(),
+            voice_revision: None,
             pace: 1.0,
         };
         assert!(d.validate(&r).is_ok());
@@ -323,6 +418,7 @@ mod tests {
                 text: "Test".into(),
                 language: "de".into(),
                 voice_id: "tone:440".into(),
+                voice_revision: None,
                 pace: 1.0,
             };
             let a = provider

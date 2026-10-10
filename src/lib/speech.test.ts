@@ -4,6 +4,16 @@ import { currentTake, matchesTake, type SpeechTake } from "./speech";
 import { testSpeechProvider, alternateSpeechProvider } from "../test/speech";
 
 const take: SpeechTake = { id: "saved", key: "key", engineVersion: "v1", modelRevision: "rev", source: { text: "Hello", language: "en", presenterId: "preset:ryan", pace: 1.1 }, samples: 24000, sampleRate: 24000, sha256: "hash" };
+it("versions cloned generation while retaining a selectable frozen recording after replacement/deletion", () => {
+  const manifest = { ...emptyNarration().manifest, presenterId: "profile:test" };
+  const script = { ...emptyScript(), text: "Hello" };
+  const saved = { ...take, engineVersion: "base-engine", modelRevision: "base-model", source: { ...take.source, presenterId: "profile:test", presenterRevision: "one" } };
+  const provider = { ...testSpeechProvider(), voices: [{ id: "profile:test", name: "Renamed", revision: "one", ready: true, engineVersion: "base-engine", modelRevision: "base-model" }] };
+  expect(currentTake(saved, script, manifest, [provider])).toBe(true);
+  expect(currentTake(saved, script, manifest, [{ ...provider, voices: [{ ...provider.voices[0]!, revision: "two" }] }])).toBe(false);
+  expect(currentTake(saved, script, manifest, [{ ...provider, voices: [] }])).toBe(false);
+  expect(matchesTake(saved, script, manifest)).toBe(true);
+});
 it("changing another slide's voice/provider/pace keeps inherited audio current", () => {
   const manifest = editedManifest(emptyNarration().manifest, {
     a: { text: "Hello", acceptedTakeId: take.id },

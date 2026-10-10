@@ -23,6 +23,50 @@ pub struct PackFile {
     pub bytes: u64,
     pub sha256: String,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    CustomVoice,
+    Base,
+}
+impl Kind {
+    fn folder(self) -> &'static str {
+        match self {
+            Self::CustomVoice => "custom-voice",
+            Self::Base => "base",
+        }
+    }
+    pub fn pack(self) -> Pack {
+        match self {
+            Self::CustomVoice => pack(),
+            Self::Base => serde_json::from_str(include_str!("../data/base-pack.json"))
+                .expect("pinned Base pack"),
+        }
+    }
+    pub fn total_bytes(self) -> u64 {
+        self.pack().files.iter().map(|f| f.bytes).sum()
+    }
+    pub fn location(self, root: &Path) -> PathBuf {
+        root.join("models").join(self.folder())
+    }
+    pub fn installed(self, root: &Path) -> bool {
+        installed_kind(root, self, &self.pack())
+    }
+    pub fn verify(self, root: &Path, cancel: &AtomicBool) -> Result<()> {
+        for f in self.pack().files {
+            verify_file(&self.location(root).join(&f.path), &f, cancel)?;
+        }
+        Ok(())
+    }
+    pub fn install(
+        self,
+        root: &Path,
+        source: Option<&Path>,
+        cancel: &AtomicBool,
+        progress: &dyn Fn(u64, &str),
+    ) -> Result<()> {
+        install_pack(root, source, cancel, progress, self.pack(), self)
+    }
+}
 pub fn pack() -> Pack {
     serde_json::from_str(include_str!("../data/custom-voice-pack.json")).expect("pinned pack")
 }
@@ -33,9 +77,12 @@ pub fn location(root: &Path) -> PathBuf {
     root.join("models/custom-voice")
 }
 pub fn installed(root: &Path) -> bool {
-    let dir = location(root);
-    fs::read_to_string(dir.join("verified.txt")).ok().as_deref() == Some(&pack().revision)
-        && pack().files.iter().all(|f| {
+    Kind::CustomVoice.installed(root)
+}
+fn installed_kind(root: &Path, kind: Kind, manifest: &Pack) -> bool {
+    let dir = kind.location(root);
+    fs::read_to_string(dir.join("verified.txt")).ok().as_deref() == Some(&manifest.revision)
+        && manifest.files.iter().all(|f| {
             fs::metadata(dir.join(&f.path)).is_ok_and(|m| m.len() == f.bytes && m.is_file())
         })
 }
@@ -134,7 +181,7 @@ pub fn install(
     cancel: &AtomicBool,
     progress: &dyn Fn(u64, &str),
 ) -> Result<()> {
-    install_pack(root, source, cancel, progress, pack())
+    Kind::CustomVoice.install(root, source, cancel, progress)
 }
 fn install_pack(
     root: &Path,
@@ -142,13 +189,18 @@ fn install_pack(
     cancel: &AtomicBool,
     progress: &dyn Fn(u64, &str),
     manifest: Pack,
+    kind: Kind,
 ) -> Result<()> {
     let _guard = lock(root, false)?;
-    if installed(root) {
-        verify(root, cancel)?;
+    if installed_kind(root, kind, &manifest) {
+        for file in &manifest.files {
+            verify_file(&kind.location(root).join(&file.path), file, cancel)?;
+        }
         return Ok(());
     }
-    let staging = root.join("models/custom-voice.install");
+    let staging = root
+        .join("models")
+        .join(format!("{}.install", kind.folder()));
     fs::create_dir_all(&staging)?;
     let client = if source.is_none() {
         Some(
@@ -269,7 +321,7 @@ fn install_pack(
     }
     cancelled(cancel)?;
     fs::write(staging.join("verified.txt"), manifest.revision)?;
-    let dest = location(root);
+    let dest = kind.location(root);
     if dest.exists() {
         fs::remove_dir_all(&dest)?;
     }
@@ -328,13 +380,22 @@ mod tests {
             Some(&source),
             &cancel,
             &|_, _| cancel.store(true, Ordering::Relaxed),
-            manifest()
+            manifest(),
+            Kind::CustomVoice
         )
         .is_err());
         assert!(!location(&root).exists());
         assert_eq!(fs::read(staging.join("weights")).unwrap(), b"mo");
         cancel.store(false, Ordering::Relaxed);
-        install_pack(&root, Some(&source), &cancel, &|_, _| {}, manifest()).unwrap();
+        install_pack(
+            &root,
+            Some(&source),
+            &cancel,
+            &|_, _| {},
+            manifest(),
+            Kind::CustomVoice,
+        )
+        .unwrap();
         assert_eq!(fs::read(location(&root).join("weights")).unwrap(), b"model");
         assert!(!staging.exists());
         fs::remove_dir_all(root).unwrap();
@@ -393,5 +454,17 @@ mod tests {
             assert!(!f.path.starts_with('/') && !f.path.contains(".."));
             assert_eq!(f.sha256.len(), 64);
         }
+        let base = Kind::Base.pack();
+        assert_eq!(base.files.len(), 11);
+        assert_ne!(base.revision, Kind::CustomVoice.pack().revision);
+        assert_eq!(base.model, "Qwen/Qwen3-TTS-12Hz-0.6B-Base");
+        for f in base.files {
+            assert!(!f.path.starts_with('/') && !f.path.contains(".."));
+            assert_eq!(f.sha256.len(), 64);
+        }
+        assert_ne!(
+            Kind::Base.location(Path::new("root")),
+            location(Path::new("root"))
+        );
     }
 }

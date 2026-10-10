@@ -58,6 +58,21 @@ impl Drop for Lease {
 pub struct Status {
     providers: Vec<Descriptor>,
     job: Option<Job>,
+    presenters: Vec<Presenter>,
+    default_presenter: Option<DefaultPresenter>,
+}
+#[derive(Clone, serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultPresenter {
+    pub provider_id: String,
+    pub presenter_id: String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Presenter {
+    pub provider_id: String,
+    #[serde(flatten)]
+    pub profile: speech_connector::profiles::Profile,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,15 +132,29 @@ impl SpeechManager {
     }
     pub fn status(&self, app: &AppHandle) -> Result<Status> {
         self.provider(app, speech_connector::QWEN_ID)?;
+        // Release the registry guard before building status. Temporaries in a
+        // struct initializer otherwise retain it while the next field locks it.
+        let providers = self.provider_snapshot();
         Ok(Status {
-            providers: self
-                .0
-                .providers
-                .lock()
-                .expect("speech providers")
-                .values()
-                .map(|p| p.describe())
+            presenters: providers
+                .iter()
+                .map(|(id, p)| {
+                    p.profiles().map(|profiles| {
+                        profiles
+                            .into_iter()
+                            .map(|profile| Presenter {
+                                provider_id: id.clone(),
+                                profile,
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
                 .collect(),
+            default_presenter: read_default(&root(app)?)?,
+            providers: providers.values().map(|p| p.describe()).collect(),
             job: self
                 .0
                 .active
@@ -134,6 +163,9 @@ impl SpeechManager {
                 .as_ref()
                 .map(|a| a.job.clone()),
         })
+    }
+    fn provider_snapshot(&self) -> BTreeMap<String, Arc<dyn SpeechProvider>> {
+        self.0.providers.lock().expect("speech providers").clone()
     }
     fn begin(
         &self,
@@ -211,6 +243,7 @@ impl SpeechManager {
         id: String,
         provider_id: String,
         source: Option<String>,
+        cloning: bool,
     ) -> Result<()> {
         let provider = self.provider(&app, &provider_id)?;
         let descriptor = provider.describe();
@@ -219,26 +252,33 @@ impl SpeechManager {
             "setup",
             None,
             None,
-            descriptor.setup.as_ref().map_or(0, |s| s.total_bytes),
+            (if cloning {
+                &descriptor.clone_setup
+            } else {
+                &descriptor.setup
+            })
+            .as_ref()
+            .map_or(0, |s| s.total_bytes),
         )?;
         let manager = self.clone();
         let event_app = app.clone();
         let event_id = id.clone();
         let last = Mutex::new(Instant::now() - Duration::from_secs(1));
-        let result = provider
-            .setup(
-                source.map(PathBuf::from),
-                cancel,
-                Arc::new(move |stage, n, total, detail| {
-                    let mut previous = last.lock().expect("progress throttle");
-                    if previous.elapsed() >= Duration::from_millis(150) || n == total {
-                        *previous = Instant::now();
-                        manager.report(&event_app, &event_id, stage, n, total, detail, None);
-                    }
-                }),
-            )
-            .await
-            .map_err(Error::from);
+        let progress: speech_connector::Progress = Arc::new(move |stage, n, total, detail| {
+            let mut previous = last.lock().expect("progress throttle");
+            if previous.elapsed() >= Duration::from_millis(150) || n == total {
+                *previous = Instant::now();
+                manager.report(&event_app, &event_id, stage, n, total, detail, None);
+            }
+        });
+        let source = source.map(PathBuf::from);
+        let result = if cloning {
+            provider.setup_cloning(source, cancel, progress)
+        } else {
+            provider.setup(source, cancel, progress)
+        }
+        .await
+        .map_err(Error::from);
         self.report(
             &app,
             &id,
@@ -292,9 +332,14 @@ impl SpeechManager {
             return Err(Error::msg("Write a script for a visible slide first."));
         }
         // Validate every slide's resolved provider before starting a batch.
-        for (_, source) in &sources {
+        for (_, source) in &mut sources {
             let provider = self.provider(&app, &source.provider_id)?;
-            let descriptor = provider.describe();
+            let descriptor = provider.describe().for_voice(&source.presenter_id);
+            source.presenter_revision = descriptor
+                .voices
+                .iter()
+                .find(|v| v.id == source.presenter_id)
+                .and_then(|v| v.revision.clone());
             descriptor.validate(&source.request())?;
         }
         let total = sources.len() as u64;
@@ -317,7 +362,7 @@ impl SpeechManager {
             for (index, (slide, source)) in sources.iter().enumerate() {
                 cancel.check()?;
                 let provider = self.provider(&app, &source.provider_id)?;
-                let descriptor = provider.describe();
+                let descriptor = provider.describe().for_voice(&source.presenter_id);
                 let key = source.key_for(&descriptor.engine_version, &descriptor.model_revision);
                 let accepted = doc
                     .manifest
@@ -363,7 +408,14 @@ impl SpeechManager {
                 };
                 let active = self.0.active.lock().expect("speech job");
                 cancel.check()?;
-                if !cache::accept(&dir, slide, &take)? {
+                let latest = provider.describe();
+                let unchanged_profile = latest
+                    .voices
+                    .iter()
+                    .find(|v| v.id == source.presenter_id)
+                    .and_then(|v| v.revision.as_ref())
+                    == source.presenter_revision.as_ref();
+                if !unchanged_profile || !cache::accept(&dir, slide, &take)? {
                     result.superseded += 1;
                 }
                 drop(active);
@@ -396,6 +448,188 @@ impl SpeechManager {
         drop(lease);
         result
     }
+    fn profile_progress(&self, app: &AppHandle, id: &str) -> speech_connector::Progress {
+        let manager = self.clone();
+        let app = app.clone();
+        let id = id.to_owned();
+        Arc::new(move |stage, n, total, detail| {
+            manager.report(&app, &id, stage, n, total, detail, None)
+        })
+    }
+    pub async fn create_profile(
+        &self,
+        app: AppHandle,
+        job_id: String,
+        provider_id: String,
+        request: speech_connector::profiles::Create,
+    ) -> Result<speech_connector::profiles::Profile> {
+        let provider = self.provider(&app, &provider_id)?;
+        let (lease, cancel) = self.begin(job_id.clone(), "profile", None, None, 0)?;
+        let result = provider
+            .create_profile(request, cancel, self.profile_progress(&app, &job_id))
+            .await
+            .map_err(Error::from);
+        drop(lease);
+        result
+    }
+    pub async fn preview_profile(
+        &self,
+        app: AppHandle,
+        job_id: String,
+        provider_id: String,
+        token: String,
+        language: String,
+    ) -> Result<()> {
+        let provider = self.provider(&app, &provider_id)?;
+        let (lease, cancel) = self.begin(job_id.clone(), "profile-preview", None, None, 0)?;
+        let result = provider
+            .preview_profile(
+                &token,
+                &language,
+                cancel,
+                self.profile_progress(&app, &job_id),
+            )
+            .await
+            .map_err(Error::from);
+        drop(lease);
+        result
+    }
+    pub async fn profile_action(
+        &self,
+        app: &AppHandle,
+        provider_id: &str,
+        action: &str,
+        id: &str,
+        value: Option<&str>,
+    ) -> Result<Option<speech_connector::profiles::Profile>> {
+        let provider = self.provider(app, provider_id)?;
+        let (lease, _) = self.begin(
+            uuid::Uuid::new_v4().to_string(),
+            "profile-management",
+            None,
+            None,
+            0,
+        )?;
+        if ["delete", "save", "discard"].contains(&action) {
+            provider.unload().await?;
+        }
+        let result = match action {
+            "save" => provider.save_profile(id, value).map(Some),
+            "discard" => provider.discard_profile(id).map(|_| None),
+            "rename" => provider
+                .rename_profile(id, value.unwrap_or(""))
+                .map(|_| None),
+            "delete" => provider.delete_profile(id).map(|_| None),
+            _ => Err(speech_connector::Error::msg(
+                "Unsupported presenter action.",
+            )),
+        }
+        .map_err(Error::from);
+        if result.is_ok()
+            && action == "delete"
+            && read_default(&root(app)?)?
+                .is_some_and(|d| d.provider_id == provider_id && d.presenter_id == id)
+        {
+            write_default(&root(app)?, None)?;
+        }
+        drop(lease);
+        result
+    }
+    pub fn set_default(&self, app: &AppHandle, choice: Option<DefaultPresenter>) -> Result<()> {
+        if let Some(choice) = &choice {
+            let d = self.provider(app, &choice.provider_id)?.describe();
+            if !d.voices.iter().any(|v| v.id == choice.presenter_id) {
+                return Err(Error::msg("Choose an available presenter first."));
+            }
+        }
+        write_default(&root(app)?, choice)
+    }
+}
+pub fn read_default(root: &Path) -> Result<Option<DefaultPresenter>> {
+    let path = root.join("default-presenter.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let meta = fs::symlink_metadata(&path)?;
+    if meta.file_type().is_symlink() || meta.len() > 4096 {
+        return Err(Error::msg("Invalid presenter preference."));
+    }
+    serde_json::from_slice(&fs::read(path)?).map_err(|e| Error::msg(e.to_string()))
+}
+fn write_default(root: &Path, choice: Option<DefaultPresenter>) -> Result<()> {
+    fs::create_dir_all(root)?;
+    speech_connector::profiles::atomic(
+        &root.join("default-presenter.json"),
+        &serde_json::to_vec(&choice).map_err(|e| Error::msg(e.to_string()))?,
+    )?;
+    Ok(())
+}
+pub fn initialize_presenter(app: &AppHandle, manager: &SpeechManager, dir: &Path) -> Result<()> {
+    let Some(choice) = read_default(&root(app)?)? else {
+        return Ok(());
+    };
+    let Ok(provider) = manager.provider(app, &choice.provider_id) else {
+        return Ok(());
+    };
+    initialize_choice(dir, &choice, &provider.describe())
+}
+fn initialize_choice(dir: &Path, choice: &DefaultPresenter, d: &Descriptor) -> Result<()> {
+    let Some(v) = d.voices.iter().find(|v| v.id == choice.presenter_id) else {
+        return Ok(());
+    };
+    let mut doc = narration::load(dir)?;
+    if doc.version != "missing" {
+        return Ok(());
+    }
+    doc.manifest.speech_provider_id = choice.provider_id.clone();
+    doc.manifest.presenter_id = v.id.clone();
+    doc.manifest.presenter_name_snapshot = v.name.clone();
+    narration::save(dir, doc.manifest, &doc.version)?;
+    Ok(())
+}
+pub fn profile_preview_file(app: &AppHandle, token: &str, language: &str) -> Result<PathBuf> {
+    Ok(speech_connector::profiles::Store::new(&root(app)?).preview_file(token, language)?)
+}
+#[derive(Serialize)]
+pub struct Recording {
+    pub id: String,
+    pub path: String,
+}
+pub fn stage_recording(app: &AppHandle, bytes: &[u8]) -> Result<Recording> {
+    if bytes.len() > 6_000_000 {
+        return Err(Error::msg("Recording is too large."));
+    }
+    let pcm = speech_connector::audio::decode(bytes)?;
+    let seconds = pcm.samples.len() as f64 / pcm.sample_rate as f64;
+    if !(3.0..=30.0).contains(&seconds) {
+        return Err(Error::msg("Record between 3 and 30 seconds."));
+    }
+    let dir = root(app)?.join("recordings");
+    fs::create_dir_all(&dir)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let path = dir.join(format!("{id}.wav"));
+    speech_connector::profiles::atomic(&path, bytes)?;
+    Ok(Recording {
+        id,
+        path: path.to_string_lossy().into_owned(),
+    })
+}
+pub fn release_recording(app: &AppHandle, id: &str) -> Result<()> {
+    uuid::Uuid::parse_str(id).map_err(|_| Error::msg("Invalid recording ID."))?;
+    let path = root(app)?.join("recordings").join(format!("{id}.wav"));
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+pub fn reference_recording_file(app: &AppHandle, id: &str) -> Result<PathBuf> {
+    uuid::Uuid::parse_str(id).map_err(|_| Error::msg("Invalid recording ID."))?;
+    let path = root(app)?.join("recordings").join(format!("{id}.wav"));
+    let meta = fs::symlink_metadata(&path)?;
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 6_000_000 {
+        return Err(Error::msg("Invalid reference recording."));
+    }
+    Ok(path)
 }
 /// Only import bounded, validated artifacts from this job's private spool.
 fn import_artifact(
@@ -458,6 +692,55 @@ pub fn takes(app: &AppHandle, id: &str) -> Result<BTreeMap<String, cache::Take>>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn status_snapshot_releases_registry_before_provider_discovery() {
+        let manager = SpeechManager::default();
+        manager
+            .0
+            .providers
+            .lock()
+            .unwrap()
+            .insert("fixture-tone".into(), Arc::new(FixtureProvider));
+        let snapshot = manager.provider_snapshot();
+        let guard = manager
+            .0
+            .providers
+            .try_lock()
+            .expect("status must release registry lock");
+        let provider = snapshot.get("fixture-tone").unwrap();
+        assert!(provider.profiles().unwrap().is_empty());
+        assert_eq!(provider.describe().id, "fixture-tone");
+        drop(guard);
+    }
+    #[test]
+    fn default_presenter_initializes_only_new_decks_and_existing_choices_stay_unchanged() {
+        let root = std::env::temp_dir().join(format!("presenter-default-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let choice = DefaultPresenter {
+            provider_id: "fixture-tone".into(),
+            presenter_id: "tone:440".into(),
+        };
+        write_default(&root, Some(choice.clone())).unwrap();
+        assert_eq!(
+            read_default(&root).unwrap().unwrap().presenter_id,
+            choice.presenter_id
+        );
+        let first = root.join("first");
+        fs::create_dir(&first).unwrap();
+        initialize_choice(&first, &choice, &FixtureProvider.describe()).unwrap();
+        let saved = narration::load(&first).unwrap();
+        assert_eq!(saved.manifest.presenter_id, "tone:440");
+        let second = root.join("second");
+        fs::create_dir(&second).unwrap();
+        let old = narration::save(&second, narration::Manifest::default(), "missing").unwrap();
+        initialize_choice(&second, &choice, &FixtureProvider.describe()).unwrap();
+        let kept = narration::load(&second).unwrap();
+        assert_eq!(kept.version, old.version);
+        assert_eq!(kept.manifest.presenter_id, "preset:ryan");
+        write_default(&root, None).unwrap();
+        assert!(read_default(&root).unwrap().is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn alternate_provider_import_is_normalized_cached_and_never_accepts_late_results() {
         tokio::runtime::Builder::new_current_thread()

@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-10",
+  "reference": "docs/feasibility/listening-2026-10-09/l-german-public-reference.wav",
+  "baseRevision": "5d83992436eae1d760afd27aff78a71d676296fc",
+  "packBytes": 2516100892,
+  "conditioningBytes": 11871,
+  "freshConnectorReusedProfile": true,
+  "renameKeptRevision": true,
+  "cancelRestartSameBytes": true,
+  "listeningFeedback": "yes, these are usable",
+  "audio": {
+    "preview-de.wav": {
+      "sha256": "046addf83097435ff945d53b77227d1af5ee4f0e92830e64dfb064598f6a4c25",
+      "seconds": 5.163333333333333
+    },
+    "preview-en.wav": {
+      "sha256": "ad4f116d0a23a5305fd61d253d7144baebf19882b39e0ef7d04d218023bdc506",
+      "seconds": 5.815541666666666
+    },
+    "reused-de.wav": {
+      "sha256": "61a02e4d6b444c99754685ba970585a9901d9e704a3238aac13f425d71620c9f",
+      "seconds": 7.123166666666667
+    }
+  },
+  "stockRegression": {
+    "cancel_after_inference_and_restart": true,
+    "cases": [
+      {
+        "case": "english",
+        "seconds": 11.76,
+        "sha256": "d0771e6412bdb48a0332be0e5b5fad473165af94450b5c2b6bb6488495312791"
+      },
+      {
+        "case": "german",
+        "seconds": 10.237458333333333,
+        "sha256": "47153240b0e142ccf993d41eba1e6b0643936075916eb42331058623de4d4f56"
+      },
+      {
+        "case": "english-paced",
+        "seconds": 11.049166666666666,
+        "sha256": "1f93661a14729caf340a49d6927ec4f582b0bf296a5bf508d8454ccc3918b50c"
+      }
+    ],
+    "standalone_without_tauri": true
+  }
+}

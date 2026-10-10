@@ -20,7 +20,7 @@ source = ROOT / 'src-tauri/speech-worker/worker.c'
 sonic = source.parent / 'vendor/sonic'
 inputs = {'engineRevision': REV, 'platform': platform.machine(), 'protocol': 1,
           'sources': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                      for p in [source, sonic / 'sonic.c', sonic / 'sonic.h']},
+                      for p in [source, source.parent / 'profile.h', sonic / 'sonic.c', sonic / 'sonic.h']},
           'flags': '-O3 -ffast-math -march=armv8-a' if platform.machine() == 'arm64' else '-O3 -ffast-math -msse2'}
 stamp = RUNTIME / 'build.json'
 binary = RUNTIME / 'slopslide-speech'

@@ -269,6 +269,7 @@ mod tests {
                         text: "First. [pause:800ms] Second.".into(),
                         language: "en".into(),
                         voice_id: "tone:440".into(),
+                        voice_revision: None,
                         pace,
                     };
                     let artifact = render(
@@ -313,6 +314,7 @@ mod tests {
                     text: "A normal sentence.".into(),
                     language: "en".into(),
                     voice_id: "tone:440".into(),
+                    voice_revision: None,
                     pace: 1.0,
                 };
                 let original = provider

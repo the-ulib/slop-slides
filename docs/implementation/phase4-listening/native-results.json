@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-10",
+  "reference": "existing CC0 German reference",
+  "importCreatePreviewPlaySave": true,
+  "nativeAcrossDeckReuse": true,
+  "nativeRestartDiscoveryAndSynthesis": true,
+  "nativeRenamePreservedIdentityAndRecording": true,
+  "newDeckDefaultApplied": true,
+  "temporaryDefaultCleared": true,
+  "nativeNarratedPreviewPlayback": true,
+  "nativeMp4Export": {
+    "seconds": 4.766667,
+    "frames": 143,
+    "width": 1920,
+    "height": 1080,
+    "video": "h264",
+    "audio": "aac",
+    "sampleRate": 24000,
+    "channels": 1,
+    "bytes": 36768
+  },
+  "mp4Sha256": "e3d2ea932968175f1949c581e3dae07f920396ff5881d42ed82455e0da3c2139",
+  "testDecks": [
+    "Phase 4 Presenter Acceptance",
+    "Phase 4 Profile Reuse",
+    "Phase 4 Restart Check"
+  ],
+  "presenterName": "Public German Test (saved)",
+  "liveMicrophoneChecked": false,
+  "replacementDeletionChecked": "unit lifecycle tests; native controls present, no native destructive test",
+  "libraryListing": "macOS directory access remained pending; created test decks used for restart verification"
+}

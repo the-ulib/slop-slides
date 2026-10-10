@@ -1,15 +1,20 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useNarration } from "../narrationStore";
-import { useSpeech } from "../speechStore";
+import { runProfileJob, useSpeech } from "../speechStore";
 import { emptyScript, slideSpeechSettings, type SlideNarration, type NarrationManifest } from "../lib/narration";
 import { narrationMarkers } from "../lib/narrationMarkers";
 import { currentTake, matchesTake } from "../lib/speech";
+import { VoiceSetup } from "./VoiceSetup";
+import { PresenterLibrary } from "./PresenterLibrary";
+import type { SavedPresenter } from "../lib/speech";
 import { RecordingHistory } from "./RecordingHistory";
-import type { Deck } from "../lib/api";
+import { api, type Deck } from "../lib/api";
 const field = "w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs disabled:opacity-40";
 export function SpeechControls({ deck, selected, manifest, editable, children }: { deck: Deck; selected: string | null; manifest: NarrationManifest | null; editable: boolean; children?: ReactNode }) {
   const speech = useSpeech(); const narration = useNarration();
+  const [voiceSetup, setVoiceSetup] = useState<{ replace?: SavedPresenter; slide: string | null } | null>(null);
+  useEffect(() => { setVoiceSetup(null); }, [deck.id]);
   const [settingsScope, setSettingsScope] = useState<"slide" | "deck">("slide");
   useEffect(() => { setSettingsScope("slide"); }, [deck.id, selected]);
   useEffect(() => { void useSpeech.getState().initialize(); }, []);
@@ -21,6 +26,16 @@ export function SpeechControls({ deck, selected, manifest, editable, children }:
   const settings = settingsScope === "slide" ? resolved : { speechProviderId: manifest?.speechProviderId ?? "qwen-local", presenterId: manifest?.presenterId ?? "preset:ryan", presenterNameSnapshot: manifest?.presenterNameSnapshot ?? "Ryan", pace: manifest?.pace ?? 1.1 };
   const provider = providers.find((p) => p.id === settings.speechProviderId);
   const slideProvider = providers.find((p) => p.id === resolved.speechProviderId);
+  const slideVoice = slideProvider?.voices.find((v) => v.id === resolved.presenterId);
+  const voiceReady = !!slideVoice && (slideVoice.ready ?? slideProvider?.ready);
+  const personalVoice = resolved.presenterId.startsWith("profile:");
+  const setup = personalVoice ? !slideProvider?.cloneReady ? slideProvider?.cloneSetup : undefined : slideProvider?.setup;
+  const install = async (source?: string) => {
+    if (!slideProvider) return;
+    if (!personalVoice) return speech.install(slideProvider.id, source);
+    try { await runProfileJob("setup", (job) => api.installCloningPack(job, source ?? null, slideProvider.id)); }
+    catch (e) { useSpeech.setState({ error: String(e) }); }
+  };
   const editSpeech = (patch: Partial<SlideNarration>) => {
     if (!selected || !editable) return;
     narration.edit(selected, { speechProviderIdOverride: resolved.speechProviderId, presenterIdOverride: resolved.presenterId, presenterNameSnapshotOverride: resolved.presenterNameSnapshot, paceOverride: resolved.pace, ...patch });
@@ -28,7 +43,7 @@ export function SpeechControls({ deck, selected, manifest, editable, children }:
   const overridden = script.speechProviderIdOverride != null || script.presenterIdOverride != null || script.paceOverride != null;
   const current = take && manifest && currentTake(take, script, manifest, providers);
   const busy = !!speech.job;
-  const canGenerate = !narrationMarkers(script.text, slideProvider?.narrationControls).error && !!manifest && !narration.error && slideProvider?.available && slideProvider.ready && slideProvider.voices.some((v) => v.id === resolved.presenterId) && slideProvider.languages.includes(script.languageOverride ?? manifest.defaultLanguage) && resolved.pace >= slideProvider.pace.min && resolved.pace <= slideProvider.pace.max;
+  const canGenerate = !narrationMarkers(script.text, slideProvider?.narrationControls).error && !!manifest && !narration.error && slideProvider?.available && (slideProvider.voices.find((v) => v.id === resolved.presenterId)?.ready ?? slideProvider.ready) && slideProvider.voices.some((v) => v.id === resolved.presenterId) && slideProvider.languages.includes(script.languageOverride ?? manifest.defaultLanguage) && resolved.pace >= slideProvider.pace.min && resolved.pace <= slideProvider.pace.max;
   const presenter = (deckDefaults: boolean) => {
     const p = deckDefaults ? provider : slideProvider;
     const id = deckDefaults ? settings.presenterId : resolved.presenterId;
@@ -42,6 +57,9 @@ export function SpeechControls({ deck, selected, manifest, editable, children }:
   };
   return <div className="mt-4 border-t border-border pt-3">
     {presenter(false)}
+    {slideProvider?.available && slideProvider.supportsCloning && <div className="mt-2 flex items-center gap-3"><button className="text-primary underline disabled:opacity-40" disabled={busy || !editable} onClick={() => setVoiceSetup({ slide: selected })}>Add my voice…</button></div>}
+    {voiceSetup && slideProvider && <VoiceSetup provider={slideProvider} initialLanguage={script.languageOverride ?? manifest?.defaultLanguage ?? "en"} replace={voiceSetup.replace} onClose={() => setVoiceSetup(null)} onSaved={(profile) => { if (selected === voiceSetup.slide) editSpeech({ presenterIdOverride: profile.id, presenterNameSnapshotOverride: profile.name }); setVoiceSetup(null); }} />}
+
     <p className="mt-1 text-[11px] text-muted-foreground">{script.languageOverride === "de" || (!script.languageOverride && manifest?.defaultLanguage === "de") ? "German" : "English"} · {resolved.pace}× · {slideProvider?.label ?? resolved.speechProviderId}</p>
     {script.text.trim() && <button className="mt-3 w-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground disabled:opacity-40" title={take ? "Creates a fresh recording. With unchanged text, the local engine may sound identical." : undefined} disabled={busy || !canGenerate || !editable} onClick={() => void speech.generate(deck.id, selected, !!take)}>{take ? "Generate another take" : "Generate audio"}</button>}
     {take && <p className="mt-2 text-muted-foreground">{current ? "Recording ready" : "Script or voice changed · generate or choose a recording"} · {(take.samples / take.sampleRate).toFixed(1)}s. Play below the slide.</p>}
@@ -50,13 +68,13 @@ export function SpeechControls({ deck, selected, manifest, editable, children }:
       editSpeech({ speechProviderIdOverride: take.source.providerId ?? "qwen-local", presenterIdOverride: take.source.presenterId, presenterNameSnapshotOverride: voice?.name ?? take.source.presenterId, paceOverride: take.source.pace, languageOverride: take.source.language });
     }}>Restore recording settings</button>}
     {selected && manifest && editable && <RecordingHistory key={`${deck.id}:${selected}`} deckId={deck.id} slide={selected} script={script} manifest={manifest} accepted={take} editable={editable && !narration.error} version={narration.document?.version} />}
-    {!speech.status ? <p className="mt-3 text-muted-foreground">Checking speech providers…</p> : !slideProvider?.available ? <p className="mt-3 text-muted-foreground">{slideProvider?.unavailableReason ?? "Speech provider unavailable. Choose a provider in Voice & timing. Saved recordings remain playable."}</p> : !slideProvider.ready && slideProvider.setup ? <div className="mt-3 rounded-md border border-border p-3">
+    {!speech.status ? <p className="mt-3 text-muted-foreground">Checking speech providers…</p> : !slideProvider?.available ? <p className="mt-3 text-muted-foreground">{slideProvider?.unavailableReason ?? "Speech provider unavailable. Choose a provider in Voice & timing. Saved recordings remain playable."}</p> : !voiceReady && setup ? <div className="mt-3 rounded-md border border-border p-3">
       <p className="font-medium">Set up {slideProvider.label}</p>
-      <p className="mt-1 text-muted-foreground">Voice pack: {(slideProvider.setup.totalBytes / 1e9).toFixed(2)} GB. {slideProvider.setup.detail}</p>
-      <button className={`${field} mt-3`} disabled={busy} onClick={() => void speech.install(slideProvider.id)}>Download voice pack</button>
-      {slideProvider.setup.importTitle && <button className="mt-2 underline disabled:opacity-40" disabled={busy} onClick={() => void open({ directory: true, multiple: false, title: slideProvider.setup!.importTitle! }).then((path) => { if (typeof path === "string") void speech.install(slideProvider.id, path); }).catch((e: unknown) => useSpeech.setState({ error: String(e) }))}>Import existing voice pack…</button>}
+      <p className="mt-1 text-muted-foreground">Voice pack: {(setup.totalBytes / 1e9).toFixed(2)} GB. {setup.detail}</p>
+      <button className={`${field} mt-3`} disabled={busy} onClick={() => void install()}>Download voice pack</button>
+      {setup.importTitle && <button className="mt-2 underline disabled:opacity-40" disabled={busy} onClick={() => void open({ directory: true, multiple: false, title: setup.importTitle! }).then((path) => { if (typeof path === "string") void install(path); }).catch((e: unknown) => useSpeech.setState({ error: String(e) }))}>Import existing voice pack…</button>}
     </div> : null}
-    {slideProvider?.available && !narrationMarkers(script.text, slideProvider.narrationControls).error && !canGenerate && manifest && script.text.trim() && slideProvider.ready && <p className="mt-2 text-amber-600">Choose a supported presenter, language and pace in Voice & timing.</p>}
+    {slideProvider?.available && !narrationMarkers(script.text, slideProvider.narrationControls).error && !canGenerate && manifest && script.text.trim() && !setup && <p className="mt-2 text-amber-600">{personalVoice && !voiceReady ? "This saved presenter is unavailable. Choose another presenter or replace its recording in Manage presenters." : "Choose a supported presenter, language and pace in Voice & timing."}</p>}
     <details className="mt-3 text-muted-foreground">
       <summary className="cursor-pointer">Voice & timing</summary>
       <div className="mt-3 space-y-3">
@@ -72,6 +90,7 @@ export function SpeechControls({ deck, selected, manifest, editable, children }:
           {!provider.pace.choices.includes(settings.pace) && <option value={settings.pace}>{settings.pace}×</option>}
           {provider.pace.choices.map((pace) => <option key={pace} value={pace}>{pace.toFixed(1)}×</option>)}
         </select></label>}
+        {provider?.supportsCloning && <PresenterLibrary providerId={provider.id} onReplace={(replace) => setVoiceSetup({ replace, slide: selected })} />}
         {provider?.voiceHint && <p className="text-[11px]">{provider.voiceHint}</p>}
         {children}
         {provider?.setup && provider.ready && <details><summary className="cursor-pointer">Manage voice pack</summary><p className="mt-2">Removing the pack frees {(provider.setup.totalBytes / 1e9).toFixed(2)} GB. Saved recordings remain playable.</p><button className="mt-2 underline disabled:opacity-40" disabled={busy} onClick={() => void speech.remove(provider.id)}>Remove voice pack</button></details>}

@@ -91,3 +91,12 @@ export const useSpeech = create<SpeechState>((set, get) => ({
     try { await api.cancelSpeech(job.id); } catch (e) { set({ error: errorMessage(e), cancelling: false }); }
   },
 }));
+
+/** Profile jobs share the existing single-job progress/cancellation channel. */
+export async function runProfileJob<T>(kind: string, run: (jobId: string) => Promise<T>): Promise<T> {
+  if (useSpeech.getState().job) throw new Error("Wait for the current speech job to finish.");
+  const job = newJob(kind, null);
+  useSpeech.setState({ job, error: null, message: null, cancelling: false });
+  try { return await run(job.id); }
+  finally { if (useSpeech.getState().job?.id === job.id) useSpeech.setState({ job: null, cancelling: false }); await useSpeech.getState().refresh(); }
+}

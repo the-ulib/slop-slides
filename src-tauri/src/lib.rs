@@ -55,6 +55,7 @@ fn create_deck(
     watcher: State<DeckWatcher>,
     title: String,
     template: Option<String>,
+    speech: State<speech::SpeechManager>,
 ) -> Result<Deck> {
     let root = templates::user_root(&app)?;
     let source = template
@@ -66,6 +67,7 @@ fn create_deck(
         .zip(source.as_deref())
         .map(|(id, html)| deck::TemplateSource { id, html });
     let deck = deck::create(&deck::library_root(&app)?, &title, template)?;
+    speech::initialize_presenter(&app, &speech, std::path::Path::new(&deck.path))?;
     stage_deck_template(&app, &deck);
     watcher.watch(app, deck.id.clone(), deck.path.clone().into())?;
     Ok(deck)
@@ -217,7 +219,86 @@ async fn install_speech_pack(
     source: Option<String>,
     provider_id: String,
 ) -> Result<()> {
-    manager.install(app, job_id, provider_id, source).await
+    manager
+        .install(app, job_id, provider_id, source, false)
+        .await
+}
+#[tauri::command]
+async fn install_cloning_pack(
+    app: AppHandle,
+    manager: State<'_, speech::SpeechManager>,
+    job_id: String,
+    source: Option<String>,
+    provider_id: String,
+) -> Result<()> {
+    manager
+        .install(app, job_id, provider_id, source, true)
+        .await
+}
+#[tauri::command]
+async fn create_voice_profile(
+    app: AppHandle,
+    manager: State<'_, speech::SpeechManager>,
+    job_id: String,
+    provider_id: String,
+    request: speech_connector::profiles::Create,
+) -> Result<speech_connector::profiles::Profile> {
+    manager
+        .create_profile(app, job_id, provider_id, request)
+        .await
+}
+
+#[tauri::command]
+async fn preview_voice_profile(
+    app: AppHandle,
+    manager: State<'_, speech::SpeechManager>,
+    job_id: String,
+    provider_id: String,
+    token: String,
+    language: String,
+) -> Result<()> {
+    manager
+        .preview_profile(app, job_id, provider_id, token, language)
+        .await
+}
+#[tauri::command]
+async fn voice_profile_action(
+    app: AppHandle,
+    manager: State<'_, speech::SpeechManager>,
+    provider_id: String,
+    action: String,
+    id: String,
+    value: Option<String>,
+) -> Result<Option<speech_connector::profiles::Profile>> {
+    manager
+        .profile_action(&app, &provider_id, &action, &id, value.as_deref())
+        .await
+}
+#[tauri::command]
+fn set_default_presenter(
+    app: AppHandle,
+    manager: State<speech::SpeechManager>,
+    choice: Option<speech::DefaultPresenter>,
+) -> Result<()> {
+    manager.set_default(&app, choice)
+}
+#[tauri::command]
+fn stage_voice_recording(app: AppHandle, bytes: Vec<u8>) -> Result<speech::Recording> {
+    speech::stage_recording(&app, &bytes)
+}
+#[tauri::command]
+fn release_voice_recording(app: AppHandle, id: String) -> Result<()> {
+    speech::release_recording(&app, &id)
+}
+#[tauri::command]
+fn import_voice_recording(app: AppHandle, path: String) -> Result<speech::Recording> {
+    let meta = std::fs::symlink_metadata(&path)?;
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 12_000_000 {
+        return Err(error::Error::msg(
+            "Choose a regular PCM16 WAV recording, up to 30 seconds.",
+        ));
+    }
+    speech::stage_recording(&app, &std::fs::read(path)?)
 }
 #[tauri::command]
 async fn remove_speech_pack(
@@ -521,6 +602,14 @@ pub fn run() {
             speech_history,
             select_speech_take,
             install_speech_pack,
+            install_cloning_pack,
+            create_voice_profile,
+            preview_voice_profile,
+            voice_profile_action,
+            set_default_presenter,
+            stage_voice_recording,
+            release_voice_recording,
+            import_voice_recording,
             remove_speech_pack,
             generate_speech,
             cancel_speech,

@@ -132,9 +132,74 @@ pub fn normalize(pcm: Pcm) -> Result<Vec<i16>> {
     Ok(out)
 }
 
+/// Reference-only resampling: windowed sinc low-pass prevents downsampling aliases.
+/// The existing provider normalization policy and stock take bytes are unchanged.
+pub fn reference_pcm(pcm: Pcm) -> Result<Vec<i16>> {
+    if pcm.samples.is_empty()
+        || !(8000..=96000).contains(&pcm.sample_rate)
+        || pcm.samples.len() > 30 * pcm.sample_rate as usize
+    {
+        return Err(Error::msg("Invalid reference recording."));
+    }
+    if pcm.sample_rate == 24000 {
+        return Ok(pcm.samples);
+    }
+    let count = pcm.samples.len() as u64 * 24000 / pcm.sample_rate as u64;
+    let cutoff = (24000.0 / pcm.sample_rate as f64).min(1.0) * 0.9;
+    let mut out = Vec::with_capacity(count as usize);
+    for n in 0..count {
+        let position = n as f64 * pcm.sample_rate as f64 / 24000.0;
+        let center = position.floor() as i64;
+        let mut sum = 0.0;
+        let mut weight = 0.0;
+        for tap in -32..=32 {
+            let index = center + tap;
+            if index < 0 || index >= pcm.samples.len() as i64 {
+                continue;
+            }
+            let distance = position - index as f64;
+            if distance.abs() > 32.0 {
+                continue;
+            }
+            let x = std::f64::consts::PI * distance * cutoff;
+            let sinc = if x.abs() < 1e-10 { 1.0 } else { x.sin() / x };
+            let w = cutoff * sinc * (0.5 + 0.5 * (std::f64::consts::PI * distance / 32.0).cos());
+            sum += pcm.samples[index as usize] as f64 * w;
+            weight += w;
+        }
+        out.push((sum / weight).round().clamp(-32768.0, 32767.0) as i16);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reference_resampling_keeps_duration_and_removes_above_nyquist_energy() {
+        let sine = |hz: f64| Pcm {
+            sample_rate: 48000,
+            samples: (0..48000)
+                .map(|n| ((n as f64 * hz * std::f64::consts::TAU / 48000.0).sin() * 10000.0) as i16)
+                .collect(),
+        };
+        let audible = reference_pcm(sine(1000.0)).unwrap();
+        let alias = reference_pcm(sine(18000.0)).unwrap();
+        assert_eq!(audible.len(), 24000);
+        assert_eq!(alias.len(), 24000);
+        let rms = |pcm: &[i16]| {
+            (pcm[100..pcm.len() - 100]
+                .iter()
+                .map(|n| (*n as f64).powi(2))
+                .sum::<f64>()
+                / (pcm.len() - 200) as f64)
+                .sqrt()
+        };
+        assert!((rms(&audible) - 7070.0).abs() < 50.0);
+        assert!(rms(&alias) < 20.0);
+        let crossings = audible.windows(2).filter(|p| p[0] <= 0 && p[1] > 0).count();
+        assert!((crossings as i32 - 1000).abs() <= 1);
+    }
     #[test]
     fn normalizes_duration_and_rejects_bad_headers() {
         let bytes = encode(&vec![1200; 16000], 16000);

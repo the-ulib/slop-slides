@@ -15,14 +15,28 @@ pub struct Worker {
     _pack_lock: super::models::PackLock,
 }
 impl Worker {
+    #[cfg(test)]
     pub async fn start(
         bin: &Path,
         root: &Path,
         cancel: &mut watch::Receiver<bool>,
     ) -> Result<Self> {
+        Self::start_voice(bin, root, super::models::Kind::CustomVoice, None, cancel).await
+    }
+    pub async fn start_voice(
+        bin: &Path,
+        root: &Path,
+        kind: super::models::Kind,
+        profile: Option<&Path>,
+        cancel: &mut watch::Receiver<bool>,
+    ) -> Result<Self> {
         let pack_lock = super::models::lock(root, true)?;
-        let mut child = tokio::process::Command::new(bin)
-            .arg(super::models::location(root))
+        let mut command = tokio::process::Command::new(bin);
+        command.arg(kind.location(root));
+        if let Some(profile) = profile {
+            command.arg(profile);
+        }
+        let mut child = command
             .env("QWEN_NO_KLEIDI", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -69,7 +83,7 @@ impl Worker {
         cancel: &mut watch::Receiver<bool>,
         progress: &(dyn Fn(u64) + Sync),
     ) -> Result<usize> {
-        let request = json!({ "text":text, "speaker":source.voice_id.strip_prefix("preset:").ok_or_else(|| Error::msg("Invalid local voice."))?, "language": if source.language == "de" { "German" } else { "English" }, "pace":format!("{:.2}", source.pace), "output":output });
+        let request = json!({ "text":text, "speaker":source.voice_id.strip_prefix("preset:").unwrap_or("saved"), "language": if source.language == "de" { "German" } else { "English" }, "pace":format!("{:.2}", source.pace), "output":output });
         let mut bytes = serde_json::to_vec(&request).expect("speech JSON");
         bytes.push(b'\n');
         if bytes.len() > 32767 {
@@ -118,7 +132,7 @@ mod tests {
             std::fs::write(&bin,"#!/bin/sh\necho 'SLOPSPEECH {\"version\":1,\"type\":\"ready\"}'\nwhile read line; do :; done\n").unwrap();
             let mut worker=Worker::start(&bin,&dir,&mut cancel).await.unwrap();
             signal.send(true).unwrap();
-            let source=SynthesisRequest{text:"Hello".into(),language:"en".into(),voice_id:"preset:ryan".into(),pace:1.1};
+            let source=SynthesisRequest{text:"Hello".into(),language:"en".into(),voice_id:"preset:ryan".into(),voice_revision: None, pace:1.1};
             assert!(worker.generate(&source,"Hello",&dir.join("out.wav"),&mut cancel,&|_|{}).await.is_err());
             worker.stop().await; assert!(worker.child.try_wait().unwrap().is_some()); assert!(!dir.join("out.wav").exists()); std::fs::remove_dir_all(dir).unwrap();
         });

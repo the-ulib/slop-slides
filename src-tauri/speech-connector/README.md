@@ -53,6 +53,22 @@ Unknown alphabetic bracket annotations, incomplete markers and SSML/XML-style ta
 
 The SlopSlide narration skill is [bundled in the host](../skills/slopslide-narration/SKILL.md), supplied by `read_narration` together with selected-provider guidance. Other applications can use the renderer/capability data without that skill or any Tauri dependency.
 
+## Saved personal presenters
+
+The optional `SpeechProvider` lifecycle exposes `setup_cloning`, `profiles`, `create_profile`, `preview_profile`, `save_profile`, `discard_profile`, `rename_profile`, `delete_profile` and `unload`. Providers without cloning return unsupported. A draft becomes a selectable voice only after a primary-language preview and save; consumers should require listening before saving. Synthesis binds both opaque `voiceId` and `voiceRevision` from discovery. Use `Descriptor::for_voice` for the selected voice's readiness, engine and model revision; stock and personal packs are independent.
+
+Qwen uses the separately pinned 0.6B Base pack (`data/base-pack.json`) for personal voices. Creation accepts an authorized 3–30 second PCM16 WAV and exact transcript. A compact SVP1 file retains speaker embedding, reference transcript and encoded reference speech; it does not fine-tune or copy model weights. Subsequent synthesis reloads this conditioning without extracting it again. Only one stock/profile worker is resident at a time.
+
+Store references, transcripts, conditioning and registry under the caller's **private** `ROOT/voices`; these never belong in a deck or agent resource. Generated narration belongs to the host's deck audio/history. Rename preserves ID/revision; replacement preserves ID with a new revision; deleting a presenter leaves already generated deck audio intact. Cancellation/failure discards an incomplete creation; hosts must discard abandoned drafts and release staged input recordings. Forced app termination can leave private drafts/temporary recordings; automatic crash cleanup is a later hardening task.
+
+Reproduce the public-reference creation, English/German preview, saved-profile reopen and cancellation/restart checks:
+
+```sh
+cargo run --manifest-path src-tauri/Cargo.toml -p speech-connector --example profiles -- ROOT HELPER NEW_OUTPUT
+```
+
+This needs the pinned Base pack installed at `ROOT/models/base`; it downloads nothing and modifies no deck. The small CLI exposes discovery/synthesis, while profile management currently uses the reusable Rust interface. Native microphone capture is a host concern, not a dependency of this crate.
+
 ## Current boundary and limits
 
 - Contract version 1 uses Rust tasks/cancellation handles; SlopSlide owns job IDs. The planned separate MCP wrapper will map these tasks to pollable jobs/resources. This CLI/private helper protocol is not MCP.
@@ -60,4 +76,4 @@ The SlopSlide narration skill is [bundled in the host](../skills/slopslide-narra
 - Qwen returns 24 kHz mono PCM16 WAV. The fixture returns 16 kHz WAV. Host import validates provenance/paths/duration, downmixes PCM16 and upsamples ≤24 kHz to the existing take format. MP3 decoding and a qualified downsampler are deferred to the cloud adapter; unsupported output fails without accepting a take.
 - Pace is processed once in the adapter; Qwen uses the existing Sonic implementation. Provider engine revision identifies this processing path. No extra host speed processing occurs.
 - Only Qwen and the development fixture are implemented. ElevenLabs authentication/billing/error mapping and MCP packaging remain separate planned work.
-- Pack resource metadata has one source: `data/custom-voice-pack.json`. The native engine/Sonic dependencies, notices and build pins remain in `../speech-worker` and `../../scripts/build-speech.py`. This crate is not published; distribution/licensing review still belongs to Phase 5.
+- Pack resource metadata is pinned in `data/custom-voice-pack.json` and `data/base-pack.json`. The native engine/Sonic dependencies, notices and build pins remain in `../speech-worker` and `../../scripts/build-speech.py`. This crate is not published; distribution/licensing review still belongs to Phase 5.

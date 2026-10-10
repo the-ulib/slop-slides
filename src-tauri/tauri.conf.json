@@ -41,6 +41,9 @@
     "resources": [
       "speech-runtime/",
       "video-runtime/"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "Entitlements.plist"
+    }
   }
 }
