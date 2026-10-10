@@ -92,6 +92,25 @@ describe("chat panel", () => {
     expect(useApp.getState().chatOpen).toBe(true);
   });
 
+  it("starts on Chat even if a previous version remembered Narration", async () => {
+    localStorage.setItem("slopslide.sidebarTab", "narration");
+    const useApp = await freshStore();
+    expect(useApp.getState().sidebarTab).toBe("chat");
+    expect(useApp.getState().chatOpen).toBe(true);
+  });
+
+  it("keeps the chosen tab during the session but starts a new session on Chat", async () => {
+    const useApp = await freshStore();
+    useApp.getState().setSidebarTab("narration");
+    useApp.getState().setChatOpen(false);
+    useApp.getState().setChatOpen(true);
+    expect(useApp.getState().sidebarTab).toBe("narration");
+    expect(localStorage.getItem("slopslide.sidebarTab")).toBeNull();
+    const restarted = await freshStore();
+    expect(restarted.getState().sidebarTab).toBe("chat");
+    expect(restarted.getState().chatOpen).toBe(true);
+  });
+
   it("restores a collapsed chat from localStorage", async () => {
     localStorage.setItem("slopslide.chatOpen", "false");
     const useApp = await freshStore();

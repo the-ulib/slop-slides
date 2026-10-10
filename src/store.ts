@@ -332,7 +332,8 @@ export const useApp = create<AppState>((set, get) => ({
   view: localStorage.getItem("slopslide.view") === "code" ? "code" : "slides",
   codeDirty: false,
   chatOpen: localStorage.getItem("slopslide.chatOpen") !== "false",
-  sidebarTab: localStorage.getItem("slopslide.sidebarTab") === "narration" ? "narration" : "chat",
+  // Start with Chat; switching to Narration applies to this app session.
+  sidebarTab: "chat",
   narrationReviewSlide: null,
   assetsRev: 0,
   messages: [],
@@ -427,7 +428,6 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   setSidebarTab: (sidebarTab) => {
-    localStorage.setItem("slopslide.sidebarTab", sidebarTab);
     get().setChatOpen(true);
     set({ sidebarTab });
   },

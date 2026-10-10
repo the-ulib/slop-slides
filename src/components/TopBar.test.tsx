@@ -53,7 +53,7 @@ describe("sidebar navigation", () => {
     fireEvent.click(button);
     expect(useApp.getState().chatOpen).toBe(true);
     expect(useApp.getState().sidebarTab).toBe("narration");
-    expect(localStorage.getItem("slopslide.sidebarTab")).toBe("narration");
+    expect(localStorage.getItem("slopslide.sidebarTab")).toBeNull();
     expect(localStorage.getItem("slopslide.chatOpen")).toBe("true");
     expect(button.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(button);
