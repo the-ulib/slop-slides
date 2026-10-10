@@ -10,7 +10,7 @@ import { startVoiceRecording } from "../lib/voiceRecording";
 import { testSpeechProvider } from "../test/speech";
 import { useSpeech } from "../speechStore";
 import { VoiceSetup } from "./VoiceSetup";
-const profile = { id: "profile:123", revision: "rev1", name: "My voice", referenceLanguage: "de" as const, ready: true };
+const profile = { id: "profile:123", revision: "rev1", name: "Uli", referenceLanguage: "de" as const, ready: true };
 const provider = () => ({ ...testSpeechProvider(), supportsCloning: true, cloneReady: true, cloneSetup: { totalBytes: 2516100912, detail: "Stays local.", importTitle: "Base pack" } });
 beforeEach(() => {
   useSpeech.setState({ status: { providers: [provider()], job: null, presenters: [] }, job: null, error: null });
@@ -21,10 +21,12 @@ beforeEach(() => {
   vi.spyOn(api, "previewVoiceProfile").mockResolvedValue();
   vi.spyOn(api, "voiceProfileAction").mockResolvedValue(profile);
   vi.spyOn(api, "setDefaultPresenter").mockResolvedValue();
+  vi.spyOn(api, "stageVoiceRecording").mockResolvedValue({ id: "mic1", path: "/mic.wav" });
   vi.spyOn(api, "releaseVoiceRecording").mockResolvedValue();
   vi.mocked(open).mockResolvedValue("/sample.wav");
 });
 async function prepare() {
+  fireEvent.change(screen.getByLabelText("Presenter name"), { target: { value: "Uli" } });
   fireEvent.click(screen.getByText("Import reference audio…"));
   await screen.findByText("Recording ready: sample.wav");
   fireEvent.change(screen.getByLabelText("Voice recording transcript"), { target: { value: "Exact spoken words." } });
@@ -34,7 +36,7 @@ describe("voice setup", () => {
   it("starts with reference import, then keeps the reference when correcting its language", async () => {
     render(<VoiceSetup provider={{ ...provider(), cloneReady: false }} initialLanguage="en" onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Import reference audio…" })).toBeTruthy();
-    expect(screen.queryByLabelText("Presenter name")).toBeNull();
+    expect((screen.getByLabelText("Presenter name") as HTMLInputElement).value).toBe("");
     expect(screen.queryByText("One-time voice model setup")).toBeNull();
     await prepare();
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ multiple: false, filters: [{ name: "WAV audio", extensions: ["wav"] }] }));
@@ -56,14 +58,14 @@ describe("voice setup", () => {
     expect(screen.getByText("Recording ready: sample.wav")).toBeTruthy();
     expect((screen.getByText("Download model & create preview") as HTMLButtonElement).disabled).toBe(false);
   });
-  it("requires a reference, transcript and consent, then listening before save/default", async () => {
+  it("requires a name, reference, transcript and consent; enables saving the first preview without playback timers", async () => {
     const onSaved = vi.fn(); render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={onSaved} />);
     expect(screen.queryByText("Create voice preview")).toBeNull();
     await prepare(); fireEvent.click(screen.getByText("Create voice preview"));
     await screen.findByLabelText("Voice setup preview");
-    expect(api.createVoiceProfile).toHaveBeenCalledWith(expect.any(String), "qwen-local", expect.objectContaining({ transcript: "Exact spoken words.", reference: "/sample.wav", language: "de", authorized: true }));
-    expect(api.voiceProfileAction).not.toHaveBeenCalled(); expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.ended(screen.getByLabelText("Voice setup preview"));
+    expect(api.createVoiceProfile).toHaveBeenCalledWith(expect.any(String), "qwen-local", expect.objectContaining({ name: "Uli", transcript: "Exact spoken words.", reference: "/sample.wav", language: "de", authorized: true }));
+    expect(api.voiceProfileAction).not.toHaveBeenCalled();
+    await waitFor(() => expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("checkbox", { name: "Use as default presenter for new decks" }));
     fireEvent.click(screen.getByText("Save presenter"));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(profile));
@@ -80,17 +82,82 @@ describe("voice setup", () => {
   it("offers import after microphone denial and releases capture on unmount", async () => {
     vi.mocked(startVoiceRecording).mockRejectedValueOnce(new Error("Permission denied"));
     const { unmount } = render(<VoiceSetup provider={provider()} initialLanguage="en" onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.click(screen.getByText("Record here")); await screen.findByText(/Permission denied.*import a WAV/);
+    fireEvent.click(screen.getByText("Record here"));
+    expect(screen.getByText("Read this passage naturally")).toBeTruthy();
+    expect(startVoiceRecording).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Start recording")); await screen.findByText(/Permission denied.*import a WAV/);
     const cancel = vi.fn(); vi.mocked(startVoiceRecording).mockResolvedValueOnce({ cancel, stop: vi.fn() });
-    fireEvent.click(screen.getByText("Record here")); await screen.findByText("Read this passage naturally");
-    expect((screen.getByLabelText("Voice recording transcript") as HTMLTextAreaElement).value).toContain("Good presentations");
+    fireEvent.click(screen.getByText("Start recording")); await waitFor(() => expect(screen.getByText(/Stop recording/)).toBeTruthy());
+    expect((screen.getByLabelText("Voice recording transcript") as HTMLTextAreaElement).value).toContain("On a bright morning");
     unmount(); expect(cancel).toHaveBeenCalled();
   });
-  it("does not accept hearing the other language as approval for the primary preview", async () => {
+  it("requires the primary preview to succeed even if the other language works", async () => {
+    vi.mocked(api.previewVoiceProfile).mockImplementation(async (_job, _provider, _token, lang) => { if (lang === "de") throw new Error("German preview failed"); });
+    render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await prepare(); fireEvent.click(screen.getByText("Create voice preview")); await screen.findByText("German preview failed");
+    fireEvent.change(screen.getByLabelText("Voice preview language"), { target: { value: "en" } });
+    fireEvent.click(screen.getByText("Generate preview")); await screen.findByLabelText("Voice setup preview");
+    expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("shows the localized passage before capture and stages the exact supplied words", async () => {
+    const stop = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(startVoiceRecording).mockResolvedValue({ cancel: vi.fn(), stop });
+    render(<VoiceSetup provider={provider()} initialLanguage="en" onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Presenter name"), { target: { value: "Uli" } });
+    fireEvent.click(screen.getByText("Record here"));
+    expect(screen.getByLabelText("Recording passage").textContent).toContain("On a bright morning");
+    fireEvent.change(screen.getByLabelText("Recording language"), { target: { value: "de" } });
+    const passage = screen.getByLabelText("Recording passage").querySelector("p")!.textContent;
+    expect(passage).toContain("Am frühen Morgen");
+    expect(passage!.split(/\s+/).length).toBeLessThanOrEqual(45);
+    expect(startVoiceRecording).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("Presenter name") as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByText("Start recording"));
+    await waitFor(() => expect(screen.getByText(/Stop recording/)).toBeTruthy());
+    fireEvent.click(screen.getByText(/Stop recording/));
+    await screen.findByText("Recording ready: Microphone recording");
+    expect(api.stageVoiceRecording).toHaveBeenCalledWith([1, 2, 3]);
+    expect((screen.getByLabelText("Voice recording transcript") as HTMLTextAreaElement).value).toBe(passage);
+    expect((screen.getByLabelText("Presenter name") as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("checkbox", { name: /I am the speaker/ }));
+    fireEvent.click(screen.getByText("Create voice preview"));
+    await screen.findByLabelText("Voice setup preview");
+    expect(api.createVoiceProfile).toHaveBeenCalledWith(expect.any(String), "qwen-local", expect.objectContaining({ name: "Uli", language: "de", transcript: passage, reference: "/mic.wav" }));
+  });
+  it("can record again from the preview without starting capture, retaining the name and cleaning the draft", async () => {
     render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={vi.fn()} />);
     await prepare(); fireEvent.click(screen.getByText("Create voice preview")); await screen.findByLabelText("Voice setup preview");
-    fireEvent.change(screen.getByLabelText("Voice preview language"), { target: { value: "en" } });
-    fireEvent.click(screen.getByText("Generate preview")); await waitFor(() => expect(api.previewVoiceProfile).toHaveBeenCalledWith(expect.any(String), "qwen-local", "rev1", "en"));
-    await act(async () => {}); fireEvent.ended(screen.getByLabelText("Voice setup preview")); expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect((screen.getByText("Record again…") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByText("Record again…"));
+    await screen.findByText("Start recording");
+    expect((screen.getByLabelText("Presenter name") as HTMLInputElement).value).toBe("Uli");
+    expect(screen.getByLabelText("Recording passage").textContent).toContain("Am frühen Morgen");
+    expect(screen.queryByLabelText("Voice setup preview")).toBeNull();
+    expect(api.voiceProfileAction).toHaveBeenCalledWith("qwen-local", "discard", "rev1");
+    expect(api.releaseVoiceRecording).toHaveBeenCalledWith("recording1");
+    expect(startVoiceRecording).not.toHaveBeenCalled();
+    expect(api.setDefaultPresenter).not.toHaveBeenCalled();
+  });
+  it("can reload a playable preview without running synthesis or blocking save", async () => {
+    render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await prepare(); fireEvent.click(screen.getByText("Create voice preview")); await screen.findByLabelText("Voice setup preview");
+    await waitFor(() => expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(false));
+    const before = screen.getByLabelText("Voice setup preview").getAttribute("src");
+    fireEvent.error(screen.getByLabelText("Voice setup preview"));
+    fireEvent.click(screen.getByText("Reload preview audio"));
+    expect(screen.getByLabelText("Voice setup preview").getAttribute("src")).not.toBe(before);
+    expect(api.previewVoiceProfile).toHaveBeenCalledTimes(1);
+    expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(false);
+  });
+  it("blocks saving and restarting while the first preview is still generating", async () => {
+    let finish!: () => void;
+    vi.mocked(api.previewVoiceProfile).mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    render(<VoiceSetup provider={provider()} initialLanguage="de" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await prepare(); fireEvent.click(screen.getByText("Create voice preview"));
+    await screen.findByText("Preparing your voice preview…");
+    expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("Record again…") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => finish());
+    await waitFor(() => expect((screen.getByText("Save presenter") as HTMLButtonElement).disabled).toBe(false));
   });
 });
